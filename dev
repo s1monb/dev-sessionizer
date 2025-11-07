@@ -12,16 +12,5 @@ fi
 
 selected_name=$(basename "$selected" | tr . _)
 
-sudo docker run --network host -it --rm \
-	-e PUID=$(id -u) -e PGID=$(id -g) \
-	-w /home/dev/$selected_name \
-	-v $selected:/home/dev/$selected_name \
-	-v ~/.ssh:/home/dev/.ssh \
-	-v ~/.gitconfig:/home/dev/.gitconfig \
-	-v ~/.claude:/home/dev/.claude \
-	-v ~/.claude.json:/home/dev/.claude.json \
-	-e DISPLAY=$DISPLAY \
-	-e XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR \
-	-v /tmp/.X11-unix:/tmp/.X11-unix \
-	-v $XDG_RUNTIME_DIR:$XDG_RUNTIME_DIR \
-	devbox-$(id -u)-$(id -g):latest /scripts/entrypoint.sh
+cd $selected
+tmux
