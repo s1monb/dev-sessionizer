@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+    echo "Usage: $0 <git-url>"
+    exit 1
+}
+
+parse_url() {
+    local url="$1"
+    if [[ "$url" =~ ^git@([^:]+):(.*)\.git$ ]]; then
+        host="${BASH_REMATCH[1]}"
+        path="${BASH_REMATCH[2]}"
+    elif [[ "$url" =~ ^https?://([^/]+)/(.+)\.git$ ]]; then
+        host="${BASH_REMATCH[1]}"
+        path="${BASH_REMATCH[2]}"
+    else
+        echo "Unsupported URL format: $url"
+        exit 1
+    fi
+}
+
+handle_existing_dir() {
+    local dir="$1"
+
+    if [ ! -d "$dir" ]; then
+        echo "$dir"
+        return
+    fi
+
+    echo "Directory already exists: $dir"
+    read -rp "Choose a new directory name (leave empty to abort): " newname
+
+    if [ -z "$newname" ]; then
+        echo "Aborted."
+        exit 1
+    fi
+
+    echo "$(dirname "$dir")/$newname"
+}
+
+clone_repo() {
+    local url="$1"
+    local dir="$2"
+
+    mkdir -p "$(dirname "$dir")"
+    echo "Cloning into: $dir"
+    git clone "$url" "$dir"
+    echo "Done."
+}
+
+main() {
+    if [ "$#" -ne 1 ]; then
+        usage
+    fi
+
+    local url="$1"
+
+    parse_url "$url"
+
+    local base="$HOME/$host/$path"
+    local repo_dir
+    repo_dir=$(handle_existing_dir "$base")
+
+    clone_repo "$url" "$repo_dir"
+}
+
+main "$@"
+

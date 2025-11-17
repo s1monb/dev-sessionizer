@@ -4,11 +4,10 @@ tasks:
   install-locally:
     desc: Install everything on the local machine within .config-folder
     cmds:
-      - rm -rf ~/.config/tmux ~/.config/nvim ~/.config/fish ~/.config/lazygit ~/.config/bin
+      - rm -rf ~/.config/tmux ~/.config/nvim ~/.config/fish ~/.config/bin
       - cp -r ./env/.config/tmux ~/.config/tmux
       - cp -r ./env/.config/nvim ~/.config/nvim
       - cp -r ./env/.config/fish ~/.config/fish
-      - cp -r ./env/.config/lazygit ~/.config/lazygit
       - cp -r ./env/.config/bin ~/.config/bin
 
   clear-local-cache:
