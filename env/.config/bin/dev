@@ -3,13 +3,13 @@
 if [[ $# -eq 1 ]]; then
     selected=$1
 else
-	selected=$(
-	  while IFS= read -r dir; do
-		[[ -z "$dir" || "$dir" =~ ^# ]] && continue
-		eval dir="$dir"
-		find "$dir" -mindepth 1 -type d -exec test -e '{}/.git' ';' -print -prune
-	  done < ~/.devconfig | fzf
-	)
+        selected=$(
+          while IFS= read -r dir; do
+                [[ -z "$dir" || "$dir" =~ ^# ]] && continue
+                eval dir="$dir"
+                find "$dir" -mindepth 1 -type d -exec test -e '{}/.git' ';' -print -prune
+          done < ~/.devconfig | fzf
+        )
 fi
 
 if [[ -z $selected ]]; then
@@ -17,6 +17,13 @@ if [[ -z $selected ]]; then
 fi
 
 selected_name=$(basename "$selected" | tr . _)
+session_name="$selected_name-$(openssl rand -base64 2)"
 
 cd $selected
-tmux
+tmux new-session -ds $session_name
+
+if [ -n "$TMUX" ]; then
+    tmux switch-client -t "$session_name"
+else
+    tmux attach -t "$session_name"
+fi
