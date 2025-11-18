@@ -15,6 +15,9 @@ map("n", "<leader>fl", "<cmd>Telescope lsp_references<cr>", { desc = "Telescope 
 map("n", "<S-h>", "<cmd>bprevious<cr>", { desc = "Prev Buffer" })
 map("n", "<S-l>", "<cmd>bnext<cr>", { desc = "Next Buffer" })
 
+map("n", "<leader>a", "<cmd>RustLsp codeAction<cr>", { desc = "Find code action" })
+map("n", "<leader>oc", "<cmd>RustLsp openCargo<cr>", { desc = "Open Cargo.toml" })
+
 -- LSP
 -- defaults:
 -- "grn" is mapped in Normal mode to |vim.lsp.buf.rename()|
