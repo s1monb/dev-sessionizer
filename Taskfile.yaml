@@ -35,3 +35,4 @@ tasks:
       - task clear-local-cache
       - cp -r ./state/nvim $HOME/.local/state/
       - cp -r ./share/nvim $HOME/.local/share/
+
