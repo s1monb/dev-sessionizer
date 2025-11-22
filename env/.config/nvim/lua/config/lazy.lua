@@ -26,6 +26,10 @@ require("lazy").setup({
 	spec = {
 		-- import your plugins
 		{ import = "plugins" },
+		{ import = "plugins.lsp" },
+		{ import = "plugins.editing" },
+		{ import = "plugins.navigation" },
+		{ import = "plugins.visuals" },
 	},
 	-- Configure any other settings here. See the documentation for more details.
 	-- automatically check for plugin updates
