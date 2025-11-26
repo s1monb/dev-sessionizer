@@ -21,7 +21,8 @@ map({ 'n', 'v', 'x' }, '<leader>d', '"+d<CR>')
 -- LSP
 map('n', '<leader>lf', vim.lsp.buf.format)
 map('n', 'gca', vim.lsp.buf.code_action)
-map('n', 'gd', vim.diagnostic.open_float)
+map('n', 'ge', vim.diagnostic.open_float)
+map('n', 'gd', vim.lsp.buf.definition)
 
 -- Git
 map('n', '<leader>lg', ':LazyGit<CR>')

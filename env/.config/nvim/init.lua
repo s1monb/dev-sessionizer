@@ -23,6 +23,7 @@ vim.pack.add({
 	{ src = 'https://github.com/neovim/nvim-lspconfig' },
 	{ src = 'https://github.com/kdheepak/lazygit.nvim' },
 	{ src = 'https://github.com/kylechui/nvim-surround' },
+	{ src = 'https://github.com/saghen/blink.cmp', version = '1.*' },
 })
 
 require 'mini.pick'.setup()
@@ -30,7 +31,13 @@ require 'mason'.setup()
 require 'mini.pairs'.setup()
 require 'oil'.setup()
 require 'nvim-surround'.setup()
-vim.lsp.enable({ 'lua_ls', 'rust_analyzer', 'tinymist' })
+require 'blink.cmp'.setup({
+	fuzzy = {
+		implementation = 'lua'
+	}
+})
+
+vim.lsp.enable({ 'lua_ls', 'rust_analyzer', 'tinymist', 'marksman' })
 
 vim.cmd('colorscheme gruvbox')
 vim.cmd(':hi statusline guibg=NONE')
