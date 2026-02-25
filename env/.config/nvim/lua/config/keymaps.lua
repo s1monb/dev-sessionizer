@@ -11,7 +11,7 @@ map({'n', 'v', 'x'}, 'L', ':bnext<CR>')
 map('n', '<leader>ff', ':Pick files<CR>')
 map('n', '<leader>fb', ':Pick buffers<CR>')
 map('n', '<leader>fh', ':Pick help<CR>')
-map('n', '<leader>e', ':Oil<CR>')
+map('n', '<leader>e', ':NvimTreeToggle<CR>')
 map('n', '<leader>km', ':e ~/.config/nvim/lua/config/keymaps.lua<CR>')
 
 -- Copy/Cut with computer clipboard

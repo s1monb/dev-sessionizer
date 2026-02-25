@@ -1,3 +1,7 @@
+-- Disable netrw
+vim.g.loaded_netrw = 1
+vim.g.loaded_netrwPlugin = 1
+
 vim.opt.number = true
 vim.opt.cursorcolumn = false
 vim.opt.relativenumber = true
@@ -24,6 +28,7 @@ vim.pack.add({
 	{ src = 'https://github.com/kdheepak/lazygit.nvim', version = '2305deed25bc61b866d5d39189e9105a45cf1cfb' },
 	{ src = 'https://github.com/kylechui/nvim-surround', version = 'fcfa7e02323d57bfacc3a141f8a74498e1522064' },
 	{ src = 'https://github.com/saghen/blink.cmp', version = '4b18c32adef2898f95cdef6192cbd5796c1a332d' },
+	{ src = 'https://github.com/nvim-tree/nvim-tree.lua', version = 'ae16aab5fd1792b97758622b9fb53408ec804fd8' },
 })
 
 require 'mini.pick'.setup()
@@ -31,6 +36,7 @@ require 'mason'.setup()
 require 'mini.pairs'.setup()
 require 'oil'.setup()
 require 'nvim-surround'.setup()
+require 'nvim-tree'.setup()
 require 'blink.cmp'.setup({
 	fuzzy = {
 		implementation = 'lua'
