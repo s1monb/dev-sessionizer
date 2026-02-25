@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+
+if [[ $# -eq 1 ]]; then
+    selected=$1
+else
+    selected=$(
+        while IFS= read -r dir; do
+            [[ -z "$dir" || "$dir" =~ ^# ]] && continue
+            eval dir="$dir"
+            find "$dir" -mindepth 1 -type d -exec test -e '{}/.git' ';' -print -prune
+        done < ~/.devconfig | fzf
+    )
+fi
+
+if [[ -z $selected ]]; then
+    exit 0
+fi
+
+selected_name=$(basename "$selected" | tr . _)
+# Safe for tmux target: base64 can produce +/ which break session:window.pane
+session_name="claude-$selected_name-$(openssl rand -hex 2)"
+
+cd "$selected" || exit 1
+
+# Create session with first pane running claude
+tmux new-session -d -s "$session_name" -c "$selected" 'claude'
+
+# Split horizontally (2 columns); focus ends up on the new (right) pane
+tmux split-window -h -t "$session_name" -c "$selected" 'claude'
+
+# Left column: split into 3 rows (select left, then split -v twice)
+tmux select-pane -t "$session_name" -L
+tmux split-window -v -t "$session_name" -c "$selected" 'claude'
+tmux select-pane -t "$session_name" -L
+tmux split-window -v -t "$session_name" -c "$selected" 'claude'
+
+# Right column: split into 3 rows (select right, then split -v twice)
+tmux select-pane -t "$session_name" -R
+tmux split-window -v -t "$session_name" -c "$selected" 'claude'
+tmux select-pane -t "$session_name" -R
+tmux split-window -v -t "$session_name" -c "$selected" 'claude'
+
+# Focus top-left pane
+tmux select-pane -t "$session_name" -L
+tmux select-pane -t "$session_name" -U
+tmux select-pane -t "$session_name" -U
+
+if [[ -n "$TMUX" ]]; then
+    tmux switch-client -t "$session_name"
+else
+    tmux attach -t "$session_name"
+fi
