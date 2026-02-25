@@ -12,7 +12,9 @@ map('n', '<leader>ff', ':Pick files<CR>')
 map('n', '<leader>fb', ':Pick buffers<CR>')
 map('n', '<leader>fh', ':Pick help<CR>')
 map('n', '<leader>e', ':NvimTreeToggle<CR>')
+map('n', '<leader>s', ':NvimTreeFocus<CR>')
 map('n', '<leader>km', ':e ~/.config/nvim/lua/config/keymaps.lua<CR>')
+map('n', '<leader>tg', ':te esc-caps-swap<CR><bclose>')
 
 -- Copy/Cut with computer clipboard
 map({ 'n', 'v', 'x' }, '<leader>y', '"+y<CR>')

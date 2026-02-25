@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+
+CURRENT=$(gsettings get org.gnome.desktop.input-sources xkb-options)
+
+if echo "$CURRENT" | grep -q "caps:swapescape"; then
+    gsettings set org.gnome.desktop.input-sources xkb-options "[]"
+    echo "Caps Lock and Escape restored to default."
+else
+    gsettings set org.gnome.desktop.input-sources xkb-options "['caps:swapescape']"
+    echo "Caps Lock and Escape swapped."
+fi

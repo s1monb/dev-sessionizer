@@ -34,7 +34,6 @@ vim.pack.add({
 require 'mini.pick'.setup()
 require 'mason'.setup()
 require 'mini.pairs'.setup()
-require 'oil'.setup()
 require 'nvim-surround'.setup()
 require 'nvim-tree'.setup()
 require 'blink.cmp'.setup({
