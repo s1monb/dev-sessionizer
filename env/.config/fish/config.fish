@@ -9,6 +9,7 @@ alias k=kubectl
 alias tf=terraform
 alias g=git
 alias python=python3
+alias ifi="ssh -Y -J simobj@login.uio.no simobj@login.ifi.uio.no"
 
 kube_ps on
 set fish_greeting
