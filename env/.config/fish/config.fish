@@ -3,7 +3,7 @@
 #  Author: [Dmitry](http://dmi3.net) [Source](https://github.com/dmi3/fish)
 
 export GOPATH="$HOME/go"
-export PATH="$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/scripts:/opt/nvim/bin:/home/linuxbrew/.linuxbrew/bin:/home/dev/.cargo/bin"
+export PATH="$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/scripts:$HOME/.config/bin"
 
 alias k=kubectl
 alias tf=terraform

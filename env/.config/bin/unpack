@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+
+tar -xzvf backup.tar.gz
+cd backup
+task unpack
+cd ..
+rm -rf ./backup
