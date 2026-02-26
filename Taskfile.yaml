@@ -4,25 +4,25 @@ tasks:
   install-locally:
     desc: Install everything on the local machine within .config-folder
     cmds:
-      - rm -rf ~/.config/tmux ~/.config/nvim ~/.config/fish ~/.config/bin
-      - cp -r ./env/.config/tmux ~/.config/tmux
-      - cp -r ./env/.config/nvim ~/.config/nvim
-      - cp -r ./env/.config/fish ~/.config/fish
-      - cp -r ./env/.config/bin ~/.config/bin
+      - rm -rf $HOME/.config/tmux $HOME/.config/nvim $HOME/.config/fish $HOME/.config/bin
+      - cp -r ./env/.config/tmux $HOME/.config/tmux
+      - cp -r ./env/.config/nvim $HOME/.config/nvim
+      - cp -r ./env/.config/fish $HOME/.config/fish
+      - cp -r ./env/.config/bin $HOME/.config/bin
 
   clear-local-cache:
     desc: Clear the local config cache
     cmds:
-      - rm -rf ~/.local/share/nvim 
-      - rm -rf ~/.local/state/nvim
+      - rm -rf $HOME/.local/share/nvim 
+      - rm -rf $HOME/.local/state/nvim
 
   pack:
     desc: Pack the cache, cfg-files and dev-script into one gzip
     cmds:
       - mkdir -p ./backup
       - mkdir -p ./backup/{share,state}/{nvim}
-      - cp -r ~/.local/state/nvim     ./backup/state/nvim
-      - cp -r ~/.local/share/nvim     ./backup/share/nvim
+      - test -d "$HOME/.local/state/nvim" && cp -r $HOME/.local/state/nvim ./backup/state/nvim
+      - test -d "$HOME/.local/share/nvim" && cp -r $HOME/.local/share/nvim ./backup/share/nvim
       - cp -r env                     ./backup/
       - cp Taskfile.yaml              ./backup/
       - tar -czvf backup.tar.gz       ./backup
@@ -33,5 +33,5 @@ tasks:
     cmds:
       - task install-locally
       - task clear-local-cache
-      - cp -r ./state/nvim ~/.local/state/
-      - cp -r ./share/nvim ~/.local/share/
+      - cp -r ./state/nvim $HOME/.local/state/
+      - cp -r ./share/nvim $HOME/.local/share/

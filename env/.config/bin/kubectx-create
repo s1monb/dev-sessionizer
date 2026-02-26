@@ -1,0 +1,53 @@
+#!/usr/bin/env bash
+set -e
+
+KUBECONFIG_FILE="$HOME/.kube/config"
+mkdir -p "$HOME/.kube"
+
+echo "=== Add kubeconfig entry ==="
+
+read -rp "Cluster URL (e.g. https://1.2.3.4:6443): " CLUSTER_URL
+read -rsp "Bearer Token: " TOKEN
+echo
+read -rp "Name (context name): " NAME
+read -rp "Proxy URL (optional, press Enter to skip): " PROXY_URL
+
+echo "Writing config to $KUBECONFIG_FILE …"
+
+# Build cluster command with optional proxy-url flag
+CLUSTER_CMD=(
+  kubectl config set-cluster "$NAME"
+  --server="$CLUSTER_URL"
+  --insecure-skip-tls-verify=true
+  --kubeconfig="$KUBECONFIG_FILE"
+)
+
+# Conditionally append proxy flag
+if [[ -n "$PROXY_URL" ]]; then
+    CLUSTER_CMD+=( --proxy-url="$PROXY_URL" )
+fi
+
+# Run cluster creation
+"${CLUSTER_CMD[@]}"
+
+# Add user + context
+kubectl config set-credentials "$NAME" \
+  --token="$TOKEN" \
+  --kubeconfig="$KUBECONFIG_FILE"
+
+kubectl config set-context "$NAME" \
+  --cluster="$NAME" \
+  --user="$NAME" \
+  --kubeconfig="$KUBECONFIG_FILE"
+
+kubectl config use-context "$NAME" --kubeconfig="$KUBECONFIG_FILE"
+
+echo ""
+echo "✅ Kubeconfig entry added!"
+if [[ -n "$PROXY_URL" ]]; then
+  echo "🔌 Proxy for this cluster: $PROXY_URL"
+else
+  echo "🔌 No proxy configured."
+fi
+echo "You can now run: kubectl --context $NAME get nodes"
+
