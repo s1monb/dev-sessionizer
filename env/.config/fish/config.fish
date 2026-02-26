@@ -8,6 +8,10 @@ export PATH="$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/s
 alias k=kubectl
 alias tf=terraform
 alias g=git
+alias python=python3
+
+kube_ps on
+set fish_greeting
 
 bind \cf "dev"
 
@@ -23,25 +27,5 @@ function __direnv_export_eval --on-event fish_prompt
             end
         end
     end
-end
-
-function __direnv_export_eval_2 --on-event fish_preexec
-    if set -q __direnv_export_again
-        set -e __direnv_export_again
-        direnv export fish | source
-        echo
-    end
-    functions --erase __direnv_cd_hook
-end
-function vagrant
-    docker run -it --rm \
-        -e LIBVIRT_DEFAULT_URI \
-        -v /var/run/libvirt/:/var/run/libvirt/ \
-        -v $HOME/.vagrant.d:/.vagrant.d \
-        -v (realpath "$PWD"):$PWD \
-        -w "$PWD" \
-        --network host \
-        vagrantlibvirt/vagrant-libvirt:latest \
-        vagrant $argv
 end
 
