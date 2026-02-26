@@ -10,6 +10,7 @@ alias tf=terraform
 alias g=git
 alias python=python3
 alias ifi="ssh -Y -J simobj@login.uio.no simobj@login.ifi.uio.no"
+alias ecs=esc-caps-swap
 
 kube_ps on
 set fish_greeting
