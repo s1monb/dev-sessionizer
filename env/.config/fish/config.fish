@@ -5,6 +5,10 @@
 export GOPATH="$HOME/go"
 export PATH="$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/scripts:/opt/nvim/bin:/home/linuxbrew/.linuxbrew/bin:/home/dev/.cargo/bin"
 
+alias k=kubectl
+alias tf=terraform
+alias g=git
+
 bind \cf "dev"
 
 # DIRENV
