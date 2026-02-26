@@ -30,9 +30,10 @@ tasks:
 
   unpack:
     desc: Unpack the cache and cfg-files from the zipped tar-archive
+    deps:
+      - install-locally
+      - clear-local-cache
     cmds:
-      - task install-locally
-      - task clear-local-cache
       - cp -r ./state/nvim $HOME/.local/state/
       - cp -r ./share/nvim $HOME/.local/share/
 

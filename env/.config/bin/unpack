@@ -2,6 +2,6 @@
 
 tar -xzvf backup.tar.gz
 cd backup
-task unpack
+go-task unpack
 cd ..
 rm -rf ./backup
