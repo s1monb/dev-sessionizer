@@ -42,7 +42,7 @@ require 'blink.cmp'.setup({
 	}
 })
 
-vim.lsp.enable({ 'lua_ls', 'rust_analyzer', 'tinymist', 'marksman' })
+vim.lsp.enable({ 'lua_ls', 'rust_analyzer', 'tinymist', 'marksman', 'ts_ls' })
 
 vim.cmd('colorscheme gruvbox')
 vim.cmd(':hi statusline guibg=NONE')
