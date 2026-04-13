@@ -4,11 +4,21 @@ tasks:
   install-locally:
     desc: Install everything on the local machine within .config-folder
     cmds:
-      - rm -rf $HOME/.config/tmux $HOME/.config/nvim $HOME/.config/fish $HOME/.config/bin
+      - git submodule update --init --recursive env/vendor/oh-my-bash
+      - rm -rf $HOME/.config/tmux $HOME/.config/nvim $HOME/.config/bin $HOME/.config/oh-my-bash
+      - cp -r ./env/vendor/oh-my-bash $HOME/.config/oh-my-bash
+      - rm -f $HOME/.config/oh-my-bash/.git
+      - cp -r ./env/.config/oh-my-bash/custom/. $HOME/.config/oh-my-bash/custom/
       - cp -r ./env/.config/tmux $HOME/.config/tmux
       - cp -r ./env/.config/nvim $HOME/.config/nvim
-      - cp -r ./env/.config/fish $HOME/.config/fish
       - cp -r ./env/.config/bin $HOME/.config/bin
+      - mkdir -p $HOME/.config/bash
+      - cp ./env/.config/bash/dev-sessionizer.bash $HOME/.config/bash/dev-sessionizer.bash
+      - test -f $HOME/.bashrc || cp ./env/.bashrc.example $HOME/.bashrc
+      - mkdir -p $HOME/.config/bash/completions
+      - 'command -v flux >/dev/null 2>&1 && flux completion bash > $HOME/.config/bash/completions/flux.bash || true'
+      - 'command -v talosctl >/dev/null 2>&1 && talosctl completion bash > $HOME/.config/bash/completions/talosctl.bash || true'
+      - 'command -v go-task >/dev/null 2>&1 && go-task --completion bash > $HOME/.config/bash/completions/go-task.bash || true'
 
   clear-local-cache:
     desc: Clear the local config cache

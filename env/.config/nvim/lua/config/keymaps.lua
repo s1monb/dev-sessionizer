@@ -43,3 +43,4 @@ map('n', '<leader>lg', ':LazyGit<CR>')
 
 -- buffers:
 map('n', '<leader>bx', ':bd<CR>')
+

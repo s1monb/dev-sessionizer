@@ -1,0 +1,3 @@
+[submodule "env/vendor/oh-my-bash"]
+	path = env/vendor/oh-my-bash
+	url = https://github.com/ohmybash/oh-my-bash.git

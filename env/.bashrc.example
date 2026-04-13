@@ -1,0 +1,8 @@
+# ~/.bashrc — machine-local only. Shared setup lives in ~/.config/bash/dev-sessionizer.bash
+# (updated when you run task install-locally). Copy this file to ~/.bashrc once, then edit
+# freely; install-locally will not overwrite ~/.bashrc.
+
+# Example: export MY_ENV_FLAG=1
+# Example: alias ll='ls -la'
+
+[[ -f $HOME/.config/bash/dev-sessionizer.bash ]] && source "$HOME/.config/bash/dev-sessionizer.bash"
