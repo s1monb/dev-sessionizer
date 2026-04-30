@@ -26,6 +26,9 @@ map('n', 'gca', vim.lsp.buf.code_action)
 map('n', 'ge', vim.diagnostic.open_float)
 map('n', 'gd', vim.lsp.buf.definition)
 
+-- NX (nrwl)
+map('n', '<leader>nx', '<cmd>Telescope nx actions<CR>')
+
 -- Git
 map('n', '<leader>lg', ':LazyGit<CR>')
 
