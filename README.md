@@ -27,3 +27,8 @@ If your login shell is still something other than bash, new tmux panes use bash 
 If you previously used a monolithic `~/.bashrc` from this repo, move your local-only lines to the top of `~/.bashrc` and end the file with:
 
 `[[ -f $HOME/.config/bash/dev-sessionizer.bash ]] && source "$HOME/.config/bash/dev-sessionizer.bash"`
+
+## TODO
+
+- [ ] Make sure to source `.bashrc` when starting the tmux-session. Or add the line above to the `.bash_profiles`-file instead
+- [ ] Figure out a way to not need two keyboard-layers for writing in norwegian
