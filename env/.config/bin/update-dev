@@ -1,0 +1,24 @@
+#!/bin/bash
+
+set -e
+
+if [[ -z "$1" ]]; then
+  echo "Usage: update-dev <path/to/backup.tar.gz>"
+  exit 1
+fi
+
+ARCHIVE="$(realpath "$1")"
+
+if [[ ! -f "$ARCHIVE" ]]; then
+  echo "Error: file not found: $ARCHIVE"
+  exit 1
+fi
+
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+
+echo "Extracting $ARCHIVE..."
+tar -xzf "$ARCHIVE" -C "$WORKDIR"
+
+cd "$WORKDIR/backup"
+task unpack

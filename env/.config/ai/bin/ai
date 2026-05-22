@@ -1,0 +1,15 @@
+#!/bin/bash
+
+mkdir -p "$HOME/.claude/handoffs"
+
+docker run -it --rm \
+  --name "claude-agent-$RANDOM" \
+  --user "$(id -u):$(id -g)" \
+  -e HOME=/home/user \
+  -v "$(pwd):/workspace" \
+  -v "$HOME/.claude.json:/home/user/.claude.json" \
+  -v "$HOME/.claude:/home/user/.claude" \
+  -v "$HOME/.claude/handoffs:/tmp" \
+  -w /workspace \
+  --network host \
+  claude-code:latest

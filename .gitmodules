@@ -1,3 +1,42 @@
 [submodule "env/vendor/oh-my-bash"]
 	path = env/vendor/oh-my-bash
 	url = https://github.com/ohmybash/oh-my-bash.git
+[submodule "env/vendor/nvim/gruvbox.nvim"]
+	path = env/vendor/nvim/gruvbox.nvim
+	url = https://github.com/ellisonleao/gruvbox.nvim
+[submodule "env/vendor/nvim/mini.pairs"]
+	path = env/vendor/nvim/mini.pairs
+	url = https://github.com/echasnovski/mini.pairs
+[submodule "env/vendor/nvim/mini.pick"]
+	path = env/vendor/nvim/mini.pick
+	url = https://github.com/echasnovski/mini.pick
+[submodule "env/vendor/nvim/mason.nvim"]
+	path = env/vendor/nvim/mason.nvim
+	url = https://github.com/mason-org/mason.nvim
+[submodule "env/vendor/nvim/nvim-lspconfig"]
+	path = env/vendor/nvim/nvim-lspconfig
+	url = https://github.com/neovim/nvim-lspconfig
+[submodule "env/vendor/nvim/lazygit.nvim"]
+	path = env/vendor/nvim/lazygit.nvim
+	url = https://github.com/kdheepak/lazygit.nvim
+[submodule "env/vendor/nvim/nvim-surround"]
+	path = env/vendor/nvim/nvim-surround
+	url = https://github.com/kylechui/nvim-surround
+[submodule "env/vendor/nvim/blink.cmp"]
+	path = env/vendor/nvim/blink.cmp
+	url = https://github.com/saghen/blink.cmp
+[submodule "env/vendor/nvim/nvim-tree.lua"]
+	path = env/vendor/nvim/nvim-tree.lua
+	url = https://github.com/nvim-tree/nvim-tree.lua
+[submodule "env/vendor/nvim/plenary.nvim"]
+	path = env/vendor/nvim/plenary.nvim
+	url = https://github.com/nvim-lua/plenary.nvim
+[submodule "env/vendor/nvim/telescope.nvim"]
+	path = env/vendor/nvim/telescope.nvim
+	url = https://github.com/nvim-telescope/telescope.nvim
+[submodule "env/vendor/nvim/nx.nvim"]
+	path = env/vendor/nvim/nx.nvim
+	url = https://github.com/Equilibris/nx.nvim
+[submodule "env/vendor/nvim/blink.lib"]
+	path = env/vendor/nvim/blink.lib
+	url = https://github.com/saghen/blink.lib

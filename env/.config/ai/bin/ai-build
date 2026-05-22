@@ -1,0 +1,3 @@
+#!/bin/bash
+
+docker build -t claude-code --network host "$(dirname "$0")/.."

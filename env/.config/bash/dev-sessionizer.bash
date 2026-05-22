@@ -35,7 +35,7 @@ source "$OSH"/oh-my-bash.sh
 
 # Toolchains and local paths (from former fish config)
 export GOPATH="$HOME/go"
-export PATH="$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/scripts:$HOME/.config/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/share/bob/nvim-bin:$HOME/.local/bin"
+export PATH="$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/scripts:$HOME/.config/bin:$HOME/.config/ai/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/share/bob/nvim-bin:$HOME/.local/bin"
 
 alias tf=terraform
 alias k=kubectl
