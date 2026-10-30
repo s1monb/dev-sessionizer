@@ -1,4 +1,5 @@
 #! bash oh-my-bash.module
+# shellcheck disable=SC2239,SC2034,SC2154  # oh-my-bash module: OMB reads the SCM_*/OMB_* settings and defines the _omb_prompt_* colours
 #
 # Fish-style prompt: kubernetes context, git, cwd, and a simple suffix.
 

@@ -1,12 +1,13 @@
-# Shared dev-sessionizer bash setup (installed to ~/.config/bash/ by task install-locally).
+# Shared dev-sessionizer bash setup (installed to ~/.config/bash/ by ./install.sh).
 # Keep machine-specific overrides in ~/.bashrc instead.
+# shellcheck disable=SC2034  # OSH_THEME, completions, aliases, plugins, … are read by oh-my-bash
 
 case $- in
   *i*) ;;
     *) return;;
 esac
 
-# Path to oh-my-bash (deployed by task install-locally).
+# Path to oh-my-bash (installed by ./install.sh).
 export OSH="${OSH:-$HOME/.config/oh-my-bash}"
 
 OSH_THEME="dev-sessionizer"
@@ -33,15 +34,20 @@ plugins=(
 
 source "$OSH"/oh-my-bash.sh
 
+# Homebrew, from whichever prefix exists (Apple silicon, Intel macOS, Linux).
+for __b in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/bin/brew; do
+  [[ -x $__b ]] && { eval "$("$__b" shellenv)"; break; }
+done
+unset __b
+
 # Toolchains and local paths (from former fish config)
 export GOPATH="$HOME/go"
-export PATH="$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/scripts:$HOME/.config/bin:$HOME/.config/ai/bin:/home/linuxbrew/.linuxbrew/bin:$HOME/.local/share/bob/nvim-bin:$HOME/.local/bin"
+export PATH="$HOME/.config/local/bin:$PATH:$GOPATH/bin:/usr/local/go/bin:$HOME/.cargo/bin:$HOME/.local/scripts:$HOME/.config/bin:$HOME/.local/share/bob/nvim-bin:$HOME/.local/bin"
 
 alias tf=terraform
 alias k=kubectl
 alias g=git
 alias python=python3
-alias ifi="ssh -Y -J simobj@login.uio.no simobj@login.ifi.uio.no"
 alias ecs=esc-caps-swap
 
 # Match previous fish default (kube_ps on)
@@ -59,7 +65,7 @@ if [[ ${BASH_VERSINFO[0]} -ge 4 ]] && [[ -o interactive ]]; then
   bind -x '"\C-f": dev' 2>/dev/null || true
 fi
 
-# go-task, kubectl plugins, etc. often need helpers from the bash-completion
+# kubectl, flux, talosctl completions etc. often need helpers from the bash-completion
 # package (_init_completion, _filedir, …). OMB's bourne-shell only checks FHS
 # paths; try a few more, then install `bash-completion` if completions still break.
 _ds_try_source_bash_completion() {
@@ -83,6 +89,7 @@ _ds_try_source_bash_completion() {
 if [[ -d $HOME/.config/bash/completions ]]; then
   _ds_try_source_bash_completion || true
   for __f in "$HOME"/.config/bash/completions/*.bash; do
+    # shellcheck source=/dev/null
     [[ -f $__f ]] && source "$__f"
   done
   unset __f

@@ -1,36 +1,91 @@
 # Dev-sessionizer
 
+A portable bash, tmux and Neovim environment for macOS and Linux. One command installs or updates
+it, and a single archive carries it to airgapped machines.
+
 ## Pre-requisites
 
-- Neovim
-- tmux
-- fzf
-- bash
-- bash-completion (needed for tab completion scripts such as the one `install-locally` installs for `go-task`; on Arch: `pacman -S bash-completion`)
-- git (for `task install`, which initializes the Oh My Bash submodule)
+**Hard** (install checks these and stops, listing everything missing, before changing anything):
 
-## Install
+- bash, git, fzf, tar, find
+- tmux ≥ 3.2
+- Neovim ≥ 0.12 (the vendored blink.cmp needs it)
 
-Clone this repository, then from the repo root:
+**Optional** (extras are skipped when absent):
+
+- `xsel` (X11) or `wl-copy` (Wayland): tmux copy to the clipboard on Linux
+- `direnv`, `jq` (used by `jwt-decode`)
+- `flux`, `talosctl`: their bash completions are generated at install time
+- `gsettings` on GNOME: needed by `esc-caps-swap`
+- the `bash-completion` package (on Arch: `pacman -S bash-completion`)
+- Docker: only for `tests/verify.sh`
+
+## Install and update
 
 ```bash
-git submodule update --init --recursive
-task install
+git clone --recursive <repo-url>
+cd dev-sessionizer
+./install.sh
 ```
 
-That copies Neovim, tmux, `~/.config/bin`, deploys Oh My Bash to `~/.config/oh-my-bash` (including the `dev-sessionizer` theme and custom plugins), installs **`~/.config/bash/dev-sessionizer.bash`** (the shared prompt, PATH, aliases, and Oh My Bash wiring), and copies Neovim plugins from `env/vendor/nvim/` into `~/.local/share/nvim/site/pack/vendor/start/`.
+Run `./install.sh` again at any time to update. It replaces the paths it owns and nothing else:
 
-Your **`~/.bashrc` is not overwritten** after the first setup: if you do not have one yet, `env/.bashrc.example` is copied to `~/.bashrc` once. Put machine-specific settings there and keep a single line that sources `~/.config/bash/dev-sessionizer.bash`. Re-run `task install` anytime to refresh the shared file from this repo.
+- `~/.config/{bash/dev-sessionizer.bash,bash/completions,oh-my-bash,tmux,nvim,bin,k9s}`
+- `~/.local/share/nvim/site/pack/vendor/start` (the vendored Neovim plugins)
 
-If your login shell is still something other than bash, new tmux panes use bash via `default-shell` in the bundled tmux config. To use bash everywhere, set your login shell to bash (e.g. `chsh -s /usr/bin/bash`).
+Install needs no network access: everything third-party is vendored under `env/vendor/`. If you
+cloned without `--recursive`, install tells you to run `git submodule update --init --recursive`.
 
-If you previously used a monolithic `~/.bashrc` from this repo, move your local-only lines to the top of `~/.bashrc` and end the file with:
+New tmux panes start the `bash` on your PATH. To use bash everywhere, make it your login shell, for
+example `chsh -s "$(command -v bash)"` (on macOS, add the Homebrew bash to `/etc/shells` first).
 
-`[[ -f $HOME/.config/bash/dev-sessionizer.bash ]] && source "$HOME/.config/bash/dev-sessionizer.bash"`
+## Machine-local overrides
+
+Install creates these once if they are missing and never touches them again. Each one loads after
+the shared defaults, so its settings win.
+
+| Component | Override |
+|-----------|----------|
+| Shell, prompt, aliases | `~/.bashrc` (sources the shared setup first, then your lines) |
+| Neovim | `~/.config/local/nvim.lua` |
+| tmux | `~/.config/local/tmux.conf` |
+| Personal scripts | `~/.config/local/bin/` (first on PATH) |
+
+Don't edit the installed copies under `~/.config/nvim`, `~/.config/tmux` and so on: the next install
+replaces them.
+
+If you previously used a monolithic `~/.bashrc` from this repo, keep only your machine-specific
+lines and put this line before them:
+
+```bash
+[[ -f $HOME/.config/bash/dev-sessionizer.bash ]] && source "$HOME/.config/bash/dev-sessionizer.bash"
+```
+
+## Project sessions
+
+`dev` (or Ctrl-F in the shell) fuzzy-picks a git repository under the folders listed in
+`~/.devconfig` and opens a tmux session for it, or switches to the existing one. `~/.devconfig`
+holds one folder per line; `#` comments, `~` and `$VAR` are allowed.
+
+## Transporting to an airgapped machine
+
+```bash
+# On the connected machine:
+./pack.sh                       # writes dev-sessionizer.tar.gz
+
+# Copy the archive over, then on the airgapped machine:
+tar -xzf dev-sessionizer.tar.gz && ./dev-sessionizer/unpack.sh
+```
+
+The archive holds the installable tree, its own `unpack.sh`, and the Neovim runtime state (Mason
+language servers, treesitter parsers, editor state). Unpack runs install, then replaces the target's
+runtime state with the archive's. Runtime state is native code, so it is only restored when the
+archive was made on the same OS and CPU architecture; otherwise unpack says so and skips it. Your
+override files are never touched.
 
 ## Neovim plugins
 
-Plugins are vendored as git submodules under `env/vendor/nvim/` and installed to `~/.local/share/nvim/site/pack/vendor/start/` by `task install`. No internet access is required after the initial clone.
+Plugins are vendored as git submodules under `env/vendor/nvim/` and installed by `./install.sh`.
 
 **To add a plugin:**
 
@@ -42,7 +97,8 @@ git add .gitmodules env/vendor/nvim/<plugin-name>
 git commit -m "vendor: add <plugin-name>"
 ```
 
-Then add the corresponding `require('<plugin>').setup({})` call to `env/.config/nvim/init.lua` and run `task install`.
+Then add the corresponding `require('<plugin>').setup({})` call to `env/.config/nvim/init.lua` and
+run `./install.sh`.
 
 **To update a plugin:**
 
@@ -52,22 +108,18 @@ git add env/vendor/nvim/<plugin-name>
 git commit -m "vendor: update <plugin-name> to <new-commit-hash>"
 ```
 
-## Transporting to an airgapped machine
-
-`task pack` creates `backup.tar.gz` containing the full runtime state (Mason LSP binaries, treesitter parsers, nvim state) plus the repo's `env/` directory. Plugin source is excluded from the archive since it lives in the repo itself.
+## Verifying changes
 
 ```bash
-# On the internet-connected machine:
-task pack
-# Transfer backup.tar.gz to the airgapped machine, then:
-tar -xzvf backup.tar.gz
-cd backup
-task unpack
+tests/verify.sh          # lint + linux + mac
+tests/verify.sh lint     # bash -n, shellcheck, portability and network checks
+tests/verify.sh linux    # smoke test in a Debian container, plus unpack without network
+tests/verify.sh mac      # smoke test on macOS with the entry scripts under /bin/bash (3.2)
 ```
 
-`task unpack` runs `task clean` then `task install` (sequential), then restores the runtime state from the archive.
+Every test runs against a throwaway `$HOME`; your real home is never touched. CI runs the same
+targets on Ubuntu and macOS.
 
 ## TODO
 
-- [ ] Make sure to source `.bashrc` when starting the tmux-session. Or add the line above to the `.bash_profiles`-file instead
 - [ ] Figure out a way to not need two keyboard-layers for writing in norwegian

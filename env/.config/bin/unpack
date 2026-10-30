@@ -1,7 +1,0 @@
-#!/usr/bin/env bash
-
-tar -xzvf backup.tar.gz
-cd backup
-go-task unpack
-cd ..
-rm -rf ./backup
