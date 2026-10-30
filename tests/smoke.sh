@@ -86,6 +86,17 @@ assert_not_contains() {
   esac
 }
 
+# Milliseconds since the epoch. GNU date has %N; macOS date does not, so fall back to perl.
+now_ms() {
+  local ns
+  ns="$(date +%s%N)"
+  if [[ $ns =~ ^[0-9]+$ ]]; then
+    printf '%s\n' "$((ns / 1000000))"
+  else
+    perl -MTime::HiRes=time -e 'printf "%d\n", time * 1000'
+  fi
+}
+
 checksum_tree() {
   (cd "$1" && find . -type f -exec cksum {} + | LC_ALL=C sort)
 }
@@ -274,11 +285,15 @@ scenario_dev_sessions() {
 scenario_dev_roots_file() {
   new_sandbox
   install >/dev/null
-  mkdir -p "$HOME/p/one/.git" "$HOME/q/two/.git" "$HOME/p/one/nested/.git"
+  mkdir -p "$HOME/p/one/.git" "$HOME/q/two/.git" "$HOME/p/one/nested/.git" \
+    "$HOME/p/a/b/three/.git" "$HOME/p/a/b/c/four/.git" "$HOME/p/.hidden/five/.git" "$HOME/p/wt"
+  printf 'gitdir: x\n' >"$HOME/p/wt/.git"
+  ln -s "$HOME/q" "$HOME/p/link"
   # shellcheck disable=SC2016,SC2088  # literal ~ and $VAR text is the point: dev expands it, never evaluates it
   printf '%s\n' '# comment' '' '~/p' '$HOME/q' '${HOME}/missing' '$(touch $HOME/pwned)' >"$HOME/.devconfig"
-  assert_eq "lists the repos under every existing root" \
-    "$(dev --list | LC_ALL=C sort | tr '\n' ' ')" "$HOME/p/one $HOME/q/two "
+  assert_eq "lists repos up to 3 deep under every existing root, skipping links and nested repos" \
+    "$(dev --list | LC_ALL=C sort | tr '\n' ' ')" \
+    "$HOME/p/.hidden/five $HOME/p/a/b/three $HOME/p/one $HOME/p/wt $HOME/q/two "
   assert_ok "nothing in the roots file is executed" test ! -e "$HOME/pwned"
   rm "$HOME/.devconfig"
   assert_fail "missing roots file is an error" dev --list
@@ -288,13 +303,73 @@ scenario_dev_roots_file() {
 scenario_dev_list_200() {
   new_sandbox
   install >/dev/null
-  local i
+  local i start out ms
   for i in $(seq 1 100); do mkdir -p "$HOME/r1/repo$i/.git" "$HOME/r2/repo$i/.git"; done
+  # A non-repo tree of 5,000 folders next to the repos.
+  for i in $(seq 1 20); do mkdir -p "$HOME/r1/big/a$i"/b{1..25}/c{1..10}; done
   # shellcheck disable=SC2088  # dev expands the literal ~ itself
   printf '%s\n' '~/r1' '~/r2' >"$HOME/.devconfig"
-  SECONDS=0
-  assert_eq "lists all 200 repos" "$(dev --list | wc -l | tr -d ' ')" "200"
-  assert_ok "listing 200 repos takes under 3 s (took ${SECONDS}s)" test "$SECONDS" -lt 3
+  start="$(now_ms)"
+  out="$(dev --list)"
+  ms=$(($(now_ms) - start))
+  assert_eq "lists all 200 repos" "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" "200"
+  assert_ok "listing 200 repos next to 5,000 folders takes under 1 s (took ${ms} ms)" test "$ms" -lt 1000
+}
+
+scenario_dev_depth_cost() {
+  new_sandbox
+  install >/dev/null
+  local i before start after ms
+  for i in $(seq 1 20); do mkdir -p "$HOME/r/org/repo$i/.git"; done
+  mkdir -p "$HOME/r/org/data"
+  # shellcheck disable=SC2088  # dev expands the literal ~ itself
+  printf '%s\n' '~/r' >"$HOME/.devconfig"
+  before="$(dev --list)"
+  # 10,000 folders, all deeper than the default depth of 3.
+  for i in $(seq 1 100); do mkdir -p "$HOME/r/org/data/x/a$i"/b{1..100}; done
+  start="$(now_ms)"
+  after="$(dev --list)"
+  ms=$(($(now_ms) - start))
+  assert_eq "folders below the depth do not change the list" "$after" "$before"
+  assert_ok "folders below the depth do not slow the list (took ${ms} ms)" test "$ms" -lt 1000
+}
+
+scenario_dev_root_depth() {
+  new_sandbox
+  install >/dev/null
+  local bad
+  mkdir -p "$HOME/p/a/b/c/four/.git" "$HOME/q/a/b/c/four/.git" "$HOME/My Projects/x/.git" \
+    "$HOME/a:b/c/r/.git"
+  # shellcheck disable=SC2016,SC2088  # literal ~ and $VAR text is the point: dev expands it, never evaluates it
+  printf '%s\n' '~/p:4' '~/q' '$HOME/My Projects:1' >"$HOME/.devconfig"
+  assert_eq "a root's :N sets its depth; other roots keep the default" \
+    "$(dev --list | LC_ALL=C sort | tr '\n' '|')" "$HOME/My Projects/x|$HOME/p/a/b/c/four|"
+  # shellcheck disable=SC2088
+  printf '%s\n' '~/a:b/c' >"$HOME/.devconfig"
+  assert_eq "a colon followed by a slash is part of the path" "$(dev --list)" "$HOME/a:b/c/r"
+  # shellcheck disable=SC2016
+  printf '%s\n' '$(touch $HOME/pwned):2' >"$HOME/.devconfig"
+  assert_ok "a line with a depth is never executed" dev --list
+  assert_ok "nothing was executed" test ! -e "$HOME/pwned"
+
+  for bad in 0 deep ''; do
+    # shellcheck disable=SC2088
+    printf '%s\n' '# roots' '~/q' "~/p:$bad" >"$HOME/.devconfig"
+    assert_fail "bad depth '$bad' is an error" dev --list
+    assert_contains "error names the line" "$(cat "$DS_RUN/err")" ".devconfig line 3"
+    assert_contains "error names the value" "$(cat "$DS_RUN/err")" "'$bad'"
+    assert_eq "bad depth prints nothing" "$(cat "$DS_RUN/out")" ""
+  done
+
+  # The picker checks the roots file before fzf starts.
+  mkdir -p "$HOME/stub"
+  printf '#!/bin/sh\ntouch "$HOME/fzf-ran"\ncat >/dev/null\n' >"$HOME/stub/fzf"
+  chmod +x "$HOME/stub/fzf"
+  # shellcheck disable=SC2088
+  printf '%s\n' '# roots' '~/q' '~/p:deep' >"$HOME/.devconfig"
+  PATH="$HOME/stub:$PATH" assert_fail "picker fails on a bad depth" dev
+  assert_contains "picker error names the line" "$(cat "$DS_RUN/err")" ".devconfig line 3"
+  assert_ok "picker never started fzf" test ! -e "$HOME/fzf-ran"
 }
 
 # --- US6: helpers ----------------------------------------------------------

@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 # Open or switch to a tmux session for a project.
 #   dev          fuzzy-pick a git repo under the roots in ~/.devconfig
+#                (one root per line; end a line with :N to search N folders deep, default 3)
 #   dev PATH     open or switch to the session for PATH
 #   dev --list   print the repos found under the roots, one per line
 set -euo pipefail
 
 roots_file="$HOME/.devconfig"
+default_depth=3
 
 die() {
   printf 'dev: %s\n' "$*" >&2
@@ -18,7 +20,7 @@ need() {
 
 need_roots() {
   [[ -f $roots_file ]] ||
-    die "$roots_file not found; create it with one project root per line, e.g. ~/github.com"
+    die "$roots_file not found; create it with one project root per line, e.g. ~/github.com (add :N to search N folders deep, default 3)"
 }
 
 # Expands a leading ~ and $VAR / ${VAR}, left to right. Nothing is ever evaluated.
@@ -36,15 +38,62 @@ expand() {
   printf '%s' "$out$s"
 }
 
-list() {
+# Prints the git repos up to DEPTH folders below ROOT, one level at a time. A repo is not
+# searched further. Symlinks are skipped; hidden folders are included. Bash built-ins only.
+scan() {
+  local root="$1" depth="$2" level=0 dir d
+  local -a current next
+  shopt -s nullglob dotglob
+  current=("$root")
+  while ((level < depth && ${#current[@]})); do
+    next=()
+    for dir in "${current[@]}"; do
+      for d in "$dir"/*/; do
+        d="${d%/}"
+        [[ -L $d ]] && continue
+        if [[ -e $d/.git ]]; then
+          printf '%s\n' "$d"
+        else
+          next+=("$d")
+        fi
+      done
+    done
+    current=(${next[@]+"${next[@]}"})
+    level=$((level + 1))
+  done
+}
+
+# Reads every root and its depth into roots/depths, so a bad line fails before any output.
+# An optional ":N" ends a line; the depth is split off before the path is expanded.
+roots=()
+depths=()
+read_roots() {
   need_roots
-  local line root
+  local line path depth n=0
   while IFS= read -r line || [[ -n $line ]]; do
+    n=$((n + 1))
     [[ -z $line || $line == \#* ]] && continue
-    root="$(expand "$line")"
-    [[ -d $root ]] || continue
-    find "$root" -mindepth 1 -type d -exec test -e '{}/.git' ';' -print -prune 2>/dev/null || true
+    path="$line"
+    depth="$default_depth"
+    if [[ $line =~ ^(.*):([^/]*)$ ]]; then
+      path="${BASH_REMATCH[1]}"
+      depth="${BASH_REMATCH[2]}"
+      [[ $depth =~ ^[1-9][0-9]*$ ]] ||
+        die "$roots_file line $n: bad depth '$depth' (want a whole number of 1 or more)"
+    fi
+    path="$(expand "$path")"
+    [[ -d $path ]] || continue
+    roots+=("$path")
+    depths+=("$depth")
   done <"$roots_file"
+}
+
+scan_roots() {
+  local i=0
+  while ((i < ${#roots[@]})); do
+    scan "${roots[i]}" "${depths[i]}"
+    i=$((i + 1))
+  done
 }
 
 sanitize() {
@@ -73,7 +122,8 @@ open_session() {
 }
 
 if [[ ${1:-} == --list ]]; then
-  list
+  read_roots
+  scan_roots
   exit 0
 fi
 
@@ -82,8 +132,8 @@ if (($# == 1)); then
   target="$1"
 else
   need fzf
-  need_roots
-  target="$(list | fzf)" || exit 0
+  read_roots
+  target="$(scan_roots | fzf)" || exit 0
 fi
 [[ -n $target ]] || exit 0
 open_session "$target"

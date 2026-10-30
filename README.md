@@ -65,7 +65,19 @@ lines and put this line before them:
 
 `dev` (or Ctrl-F in the shell) fuzzy-picks a git repository under the folders listed in
 `~/.devconfig` and opens a tmux session for it, or switches to the existing one. `~/.devconfig`
-holds one folder per line; `#` comments, `~` and `$VAR` are allowed.
+holds one folder per line; `~` and `$VAR` are allowed, and lines starting with `#` are comments
+(a `#` later in a line is part of the path).
+
+Each folder is searched 3 levels deep by default. End a line with `:N` to search that folder `N`
+levels deep instead:
+
+```text
+~/github.com
+~/github.com/s1monb/worktrees:3
+```
+
+`dev PATH` opens any folder, however deep. The last folder in a root's path cannot contain `:`,
+because the text after it is read as a depth.
 
 ## Transporting to an airgapped machine
 

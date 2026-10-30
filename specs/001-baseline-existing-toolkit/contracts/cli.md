@@ -61,6 +61,8 @@ It never opens a network connection and never writes to override files.
 - **Keybinding**: Ctrl-F in an interactive shell (unchanged).
 - **`dev --list`**: prints every repo found under the roots, one per line, and exits 0. Exits 1 if
   `~/.devconfig` is missing. The picker reads its candidates from this list; tests use it directly.
+  The search depth per root (`:N`, default 3) and the bad-depth error are defined in
+  `specs/002-bounded-repo-scan/contracts/cli.md`.
 - **`DS_DEV_NO_ATTACH=1`**: creates or reuses the session but does not attach or switch to it. Used
   by the smoke tests, which have no terminal.
 
