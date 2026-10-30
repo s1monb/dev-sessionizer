@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Toggle swapping Caps Lock and Escape (GNOME only).
+set -euo pipefail
+
+if ! command -v gsettings >/dev/null 2>&1 || [[ ${XDG_CURRENT_DESKTOP:-} != *GNOME* ]]; then
+  echo "esc-caps-swap: requires GNOME (gsettings)" >&2
+  exit 1
+fi
 
 CURRENT=$(gsettings get org.gnome.desktop.input-sources xkb-options)
 

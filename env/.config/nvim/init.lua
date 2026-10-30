@@ -51,3 +51,7 @@ vim.cmd('colorscheme gruvbox')
 vim.cmd(':hi statusline guibg=NONE')
 
 require('config.keymaps')
+
+-- Machine-local overrides (created once by install.sh, never rewritten)
+local local_cfg = vim.fn.expand('~/.config/local/nvim.lua')
+if vim.uv.fs_stat(local_cfg) then dofile(local_cfg) end

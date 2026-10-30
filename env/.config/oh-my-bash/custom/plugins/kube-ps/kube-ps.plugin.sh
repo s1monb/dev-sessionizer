@@ -1,4 +1,5 @@
 #! bash oh-my-bash.module
+# shellcheck disable=SC2239  # oh-my-bash module header, not a real shebang
 
 kube_ps() {
   case "${1-}" in

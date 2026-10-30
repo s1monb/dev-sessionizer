@@ -1,29 +1,89 @@
 #!/usr/bin/env bash
+# Open or switch to a tmux session for a project.
+#   dev          fuzzy-pick a git repo under the roots in ~/.devconfig
+#   dev PATH     open or switch to the session for PATH
+#   dev --list   print the repos found under the roots, one per line
+set -euo pipefail
 
-if [[ $# -eq 1 ]]; then
-    selected=$1
+roots_file="$HOME/.devconfig"
+
+die() {
+  printf 'dev: %s\n' "$*" >&2
+  exit 1
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || die "$1 not found; install it first"
+}
+
+need_roots() {
+  [[ -f $roots_file ]] ||
+    die "$roots_file not found; create it with one project root per line, e.g. ~/github.com"
+}
+
+# Expands a leading ~ and $VAR / ${VAR}, left to right. Nothing is ever evaluated.
+expand() {
+  local s="$1" out="" name
+  # shellcheck disable=SC2088  # matching a literal ~ from the roots file
+  if [[ $s == "~" || $s == "~/"* ]]; then
+    s="$HOME${s#\~}"
+  fi
+  while [[ $s =~ ^([^$]*)\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?(.*)$ ]]; do
+    name="${BASH_REMATCH[2]}"
+    out="$out${BASH_REMATCH[1]}${!name-}"
+    s="${BASH_REMATCH[3]}"
+  done
+  printf '%s' "$out$s"
+}
+
+list() {
+  need_roots
+  local line root
+  while IFS= read -r line || [[ -n $line ]]; do
+    [[ -z $line || $line == \#* ]] && continue
+    root="$(expand "$line")"
+    [[ -d $root ]] || continue
+    find "$root" -mindepth 1 -type d -exec test -e '{}/.git' ';' -print -prune 2>/dev/null || true
+  done <"$roots_file"
+}
+
+sanitize() {
+  printf '%s' "$1" | tr -c 'A-Za-z0-9_-' '_'
+}
+
+open_session() {
+  local dir name
+  dir="$(cd "$1" 2>/dev/null && pwd)" || die "not a directory: $1"
+  name="$(sanitize "$(basename "$dir")")"
+
+  # Same name, different project: disambiguate with the parent folder.
+  if tmux has-session -t "=$name" 2>/dev/null &&
+    [[ $(tmux display-message -p -t "=$name:" '#{session_path}') != "$dir" ]]; then
+    name="${name}_$(sanitize "$(basename "$(dirname "$dir")")")"
+  fi
+
+  tmux has-session -t "=$name" 2>/dev/null || tmux new-session -ds "$name" -c "$dir"
+
+  [[ ${DS_DEV_NO_ATTACH:-} == 1 ]] && return 0
+  if [[ -n ${TMUX:-} ]]; then
+    tmux switch-client -t "=$name"
+  else
+    tmux attach -t "=$name"
+  fi
+}
+
+if [[ ${1:-} == --list ]]; then
+  list
+  exit 0
+fi
+
+need tmux
+if (($# == 1)); then
+  target="$1"
 else
-        selected=$(
-          while IFS= read -r dir; do
-                [[ -z "$dir" || "$dir" =~ ^# ]] && continue
-                eval dir="$dir"
-                find "$dir" -mindepth 1 -type d -exec test -e '{}/.git' ';' -print -prune
-          done < ~/.devconfig | fzf
-        )
+  need fzf
+  need_roots
+  target="$(list | fzf)" || exit 0
 fi
-
-if [[ -z $selected ]]; then
-    exit 0
-fi
-
-selected_name=$(basename "$selected" | tr . _)
-session_name="$selected_name-$(openssl rand -base64 2)"
-
-cd $selected
-tmux new-session -ds $session_name
-
-if [ -n "$TMUX" ]; then
-    tmux switch-client -t "$session_name"
-else
-    tmux attach -t "$session_name"
-fi
+[[ -n $target ]] || exit 0
+open_session "$target"

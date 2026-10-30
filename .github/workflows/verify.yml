@@ -1,0 +1,22 @@
+name: verify
+
+on: [push, pull_request]
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: tests/verify.sh lint
+      - run: tests/verify.sh linux
+
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: brew install tmux neovim fzf
+      - run: tests/verify.sh mac
