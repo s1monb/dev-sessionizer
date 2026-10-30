@@ -14,6 +14,9 @@ OSH_THEME="dev-sessionizer"
 
 OMB_USE_SUDO=true
 
+# oh-my-bash is vendored and updated by ./install.sh; its own updater can't work here.
+DISABLE_AUTO_UPDATE=true
+
 completions=(
   git
   composer
