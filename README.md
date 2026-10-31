@@ -156,6 +156,14 @@ runtime state with the archive's. Runtime state is native code, so it is only re
 archive was made on the same OS and CPU architecture; otherwise unpack says so and skips it. Your
 override files are never touched.
 
+## Neovim keymaps
+
+[which-key](https://github.com/folke/which-key.nvim) shows the available keys in a popup when you
+pause after a prefix, such as `<Space>` (the leader), `g` or `ys`. `<Space>kk` lists every keymap
+and `<Space>?` lists the ones local to the current buffer. When you add a keymap in
+`env/.config/nvim/lua/config/keymaps.lua`, give it a description (the last argument of `map`) so
+the popup can name it. The smoke test checks that every leader keymap has one.
+
 ## Neovim plugins
 
 Plugins are vendored as git submodules under `env/vendor/nvim/` and installed by `./install.sh`.

@@ -40,3 +40,6 @@
 [submodule "env/vendor/nvim/blink.lib"]
 	path = env/vendor/nvim/blink.lib
 	url = https://github.com/saghen/blink.lib
+[submodule "env/vendor/nvim/which-key.nvim"]
+	path = env/vendor/nvim/which-key.nvim
+	url = https://github.com/folke/which-key.nvim

@@ -37,6 +37,7 @@ require 'blink.cmp'.setup({
 		implementation = 'lua'
 	}
 })
+require 'which-key'.setup({})
 require 'telescope'.setup({})
 require 'nx'.setup({
 	nx_cmd_root = 'npx nx',
