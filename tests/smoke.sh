@@ -158,6 +158,9 @@ scenario_components_load() {
   assert_eq "neovim starts without errors" "$(nvim --headless +qa 2>&1)" ""
   assert_ok "enabled language servers resolve from vendored nvim-lspconfig" nvim --headless \
     "+lua for _, s in ipairs({'lua_ls','rust_analyzer','tinymist','marksman','ts_ls'}) do assert(vim.lsp.config[s], s) end" +qa
+  assert_eq "every leader keymap has a description for which-key" "$(nvim --headless \
+    "+lua require('which-key'); for _, m in ipairs(vim.api.nvim_get_keymap('n')) do if m.lhs:sub(1, 1) == ' ' and (m.desc or '') == '' then io.write(m.lhs, ' ') end end" \
+    +qa 2>&1)" ""
   assert_ok "tmux config loads" tmux -L ds-verify -f /dev/null new-session -d 'sleep 30' \; \
     source-file "$HOME/.config/tmux/tmux.conf"
   tmux -L ds-verify kill-server 2>/dev/null || true
