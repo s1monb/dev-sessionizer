@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# Run a coding agent with its permission prompts off, in a throwaway container that can only
+# write to one project folder. See README "Agent sandbox".
+set -euo pipefail
+
+image=dev-sessionizer-sandbox
+env_file="$HOME/.config/local/sandbox.env"
+
+usage() {
+  cat <<'EOF'
+Usage: sandbox [options] [claude|opencode|shell] [DIR] [-- ARGS...]
+
+Runs the agent (default claude) in a container with DIR (default .) as its only writable host
+folder. ARGS go to the agent, or to bash for shell (e.g. sandbox shell -- -c 'id').
+
+Options:
+  --network MODE  docker network for this run (default $SANDBOX_NETWORK, else bridge)
+  --rebuild       rebuild the image from scratch (picks up new agent versions)
+  --reset         empty this project's tool cache first
+  -h, --help      show this help
+EOF
+}
+
+die() {
+  printf 'sandbox: %s\n' "$*" >&2
+  exit 1
+}
+
+mode="" dir="" network="${SANDBOX_NETWORK:-bridge}" rebuild=0 reset=0
+args=()
+while (($#)); do
+  case "$1" in
+    -h | --help) usage; exit 0 ;;
+    --network)
+      (($# > 1)) || die "--network needs a value"
+      network="$2"
+      shift
+      ;;
+    --rebuild) rebuild=1 ;;
+    --reset) reset=1 ;;
+    --) shift; args=("$@"); break ;;
+    -*) die "unknown option: $1 (see sandbox --help)" ;;
+    *)
+      if [[ -z $mode && ($1 == claude || $1 == opencode || $1 == shell) ]]; then
+        mode="$1"
+      elif [[ -n $dir ]]; then
+        die "only one project folder allowed"
+      elif [[ -d $1 ]]; then
+        dir="$1"
+      else
+        die "unknown agent or folder: $1 (agents: claude, opencode, shell)"
+      fi
+      ;;
+  esac
+  shift
+done
+mode="${mode:-claude}"
+
+project="$(cd "${dir:-.}" && pwd -P)"
+home="$(cd "$HOME" && pwd -P)"
+if [[ $project == / || $project == "$home" || $home == "$project"/* ]]; then
+  die "refusing to sandbox $project: pick a project folder below your home"
+fi
+[[ $(id -u) != 0 ]] || die "refusing to run as root"
+
+command -v docker >/dev/null 2>&1 || die "docker not found; install Docker to use the sandbox"
+docker info >/dev/null 2>&1 || die "cannot reach the Docker daemon; is it running?"
+
+# The image is rebuilt whenever its files or the host user change.
+files="$(cd "$(dirname "${BASH_SOURCE[0]}")/../sandbox" && pwd -P)"
+hash="$(cat "$files/Dockerfile" "$files/entrypoint.sh" | cksum | cut -d' ' -f1)-$(id -u)-$(id -g)"
+current="$(docker image inspect -f '{{ index .Config.Labels "dev-sessionizer.hash" }}' "$image" 2>/dev/null || true)"
+if ((rebuild)) || [[ $current != "$hash" ]]; then
+  build=(build -t "$image" --label "dev-sessionizer.hash=$hash"
+    --build-arg "UID=$(id -u)" --build-arg "GID=$(id -g)")
+  ((rebuild)) && build+=(--pull --no-cache)
+  printf 'sandbox: building %s\n' "$image" >&2
+  docker "${build[@]}" "$files" >&2 || die "image build failed"
+fi
+
+# One tool cache per project, so one project cannot swap the tools another one runs.
+name="$(basename "$project" | tr -c 'A-Za-z0-9_.\n-' '-')"
+volume="$image-$name-$(printf %s "$project" | cksum | cut -d' ' -f1)"
+if ((reset)); then
+  docker volume rm -f "$volume" >/dev/null
+fi
+docker volume create --label "dev-sessionizer.project=$project" "$volume" >/dev/null
+
+run=(run --rm -i --init --cap-drop=ALL --security-opt=no-new-privileges --pids-limit=4096
+  --hostname sandbox --network "$network"
+  -v "$project:$project" -w "$project" -v "$volume:/cache")
+[[ -t 0 && -t 1 ]] && run+=(-t)
+
+# Host agent config, read-only; the entrypoint copies it into the container's home.
+[[ -e $HOME/.claude ]] && run+=(-v "$HOME/.claude:/host/claude:ro")
+[[ -e $HOME/.claude.json ]] && run+=(-v "$HOME/.claude.json:/host/claude.json:ro")
+[[ -e $HOME/.config/opencode ]] && run+=(-v "$HOME/.config/opencode:/host/opencode-config:ro")
+[[ -e $HOME/.local/share/opencode/auth.json ]] &&
+  run+=(-v "$HOME/.local/share/opencode/auth.json:/host/opencode-auth.json:ro")
+
+# Only these variables cross over; no SSH agent, git credentials or cloud tokens.
+for var in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY TERM COLORTERM; do
+  [[ -n ${!var:-} ]] && run+=(-e "$var")
+done
+git_name="$(git config --get user.name 2>/dev/null || true)"
+git_email="$(git config --get user.email 2>/dev/null || true)"
+[[ -n $git_name ]] && run+=(-e "GIT_AUTHOR_NAME=$git_name" -e "GIT_COMMITTER_NAME=$git_name")
+[[ -n $git_email ]] && run+=(-e "GIT_AUTHOR_EMAIL=$git_email" -e "GIT_COMMITTER_EMAIL=$git_email")
+[[ -f $env_file ]] && run+=(--env-file "$env_file")
+
+exec docker "${run[@]}" "$image" "$mode" ${args[@]+"${args[@]}"}

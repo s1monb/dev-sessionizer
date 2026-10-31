@@ -18,7 +18,7 @@ it, and a single archive carries it to airgapped machines.
 - `flux`, `talosctl`: their bash completions are generated at install time
 - `gsettings` on GNOME: needed by `esc-caps-swap`
 - the `bash-completion` package (on Arch: `pacman -S bash-completion`)
-- Docker: only for `tests/verify.sh`
+- Docker: for `sandbox` (it also needs network to build its image) and for `tests/verify.sh`
 
 ## Install and update
 
@@ -50,6 +50,7 @@ the shared defaults, so its settings win.
 | Neovim | `~/.config/local/nvim.lua` |
 | tmux | `~/.config/local/tmux.conf` |
 | Personal scripts | `~/.config/local/bin/` (first on PATH) |
+| Agent sandbox environment | `~/.config/local/sandbox.env` (mode 600) |
 
 Don't edit the installed copies under `~/.config/nvim`, `~/.config/tmux` and so on: the next install
 replaces them.
@@ -78,6 +79,66 @@ levels deep instead:
 
 `dev PATH` opens any folder, however deep. The last folder in a root's path cannot contain `:`,
 because the text after it is read as a depth.
+
+## Agent sandbox
+
+`sandbox` runs a coding agent with its permission prompts turned off, inside a throwaway Docker
+container that can only write to one project folder:
+
+```bash
+sandbox                      # Claude Code in the current folder
+sandbox opencode ~/proj      # OpenCode in ~/proj
+sandbox shell                # bash in the same environment, for debugging
+sandbox -- --resume          # everything after -- goes to the agent (or to bash for shell)
+sandbox --rebuild            # rebuild the image, e.g. for newer agent versions
+sandbox --reset              # empty this project's tool cache first
+sandbox --network host       # another docker network for this run
+```
+
+The image is built on first use and rebuilt automatically when its files change. Each session gets
+a new container that is removed when the agent exits.
+
+**Logging in.** Your Claude Code and OpenCode config (`~/.claude`, `~/.claude.json`,
+`~/.config/opencode`, OpenCode's `auth.json`) is mounted read-only and copied into the container,
+so the agent has your settings, `CLAUDE.md`, agents and MCP servers. It can change its copy but not
+yours. Session history is not copied. Claude Code's own login is not carried over (on macOS it is in
+the Keychain), so create a long-lived token with `claude setup-token` and put it in
+`~/.config/local/sandbox.env`:
+
+```text
+CLAUDE_CODE_OAUTH_TOKEN=...
+```
+
+That file is passed to Docker as `--env-file` (one `KEY=value` per line, no quotes) and is the
+place for any other variable the sandbox needs. `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`
+from your shell are passed too, as are your git name and email.
+
+**Toolchains.** If the project has `mise.toml`, `.mise.toml` or `.tool-versions`, the tools are
+installed before the agent starts. Installed tools and package caches live in a Docker volume per
+project, so the next start is fast. The agent has no root and cannot `apt install`; tools come from
+mise.
+
+**What is isolated:** the agent runs as your user ID with no capabilities, no sudo and no way to
+gain privileges. It cannot write anywhere on the host except the project folder. It gets no SSH
+keys or agent, git credentials, GitHub token, cloud credentials or Docker socket, so it can commit
+but not push. Nothing is exposed on host ports.
+
+**What is not:**
+
+- It has full internet access.
+- It can change anything in the project, including `.git`. Git hooks and git config run on the
+  host the next time you use git there, and they do not show up in a diff. Review what the agent
+  changed (scripts, `package.json`, `.envrc`, and `.git/hooks`, `.git/config`) before running
+  anything in the project on the host.
+- A remote URL with an embedded token lets it push.
+- OpenCode providers that log in with OAuth may refresh their token inside the sandbox and log out
+  the host copy. API-key providers are unaffected.
+- Git worktrees do not work inside, because their `.git` points outside the project. Config files
+  that are symlinks to elsewhere (e.g. a dotfiles repo) arrive broken.
+
+On a Linux machine where containers on the default bridge network have no internet, set
+`export SANDBOX_NETWORK=host` in `~/.bashrc`. The sandbox needs network, so it does not work on an
+airgapped machine.
 
 ## Transporting to an airgapped machine
 
@@ -127,6 +188,7 @@ tests/verify.sh          # lint + linux + mac
 tests/verify.sh lint     # bash -n, shellcheck, portability and network checks
 tests/verify.sh linux    # smoke test in a Debian container, plus unpack without network
 tests/verify.sh mac      # smoke test on macOS with the entry scripts under /bin/bash (3.2)
+tests/verify.sh sandbox  # agent sandbox checks against your Docker (needs network; not in the default)
 ```
 
 Every test runs against a throwaway `$HOME`; your real home is never touched. CI runs the same
