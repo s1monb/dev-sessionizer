@@ -30,6 +30,7 @@ cp -R "$ENV/.config/oh-my-bash/custom/." "$HOME/.config/oh-my-bash/custom/"
 replace "$ENV/.config/tmux" "$HOME/.config/tmux"
 replace "$ENV/.config/nvim" "$HOME/.config/nvim"
 replace "$ENV/.config/bin" "$HOME/.config/bin"
+replace "$ENV/.config/sandbox" "$HOME/.config/sandbox"
 replace "$ENV/.config/k9s" "$HOME/.config/k9s"
 
 plugins="$HOME/.local/share/nvim/site/pack/vendor/start"
@@ -59,5 +60,14 @@ mkdir -p "$HOME/.config/local/bin"
   echo '-- machine-local overrides (never touched by install)' >"$HOME/.config/local/nvim.lua"
 [[ -e $HOME/.config/local/tmux.conf ]] ||
   echo '# machine-local overrides (never touched by install)' >"$HOME/.config/local/tmux.conf"
+if [[ ! -e $HOME/.config/local/sandbox.env ]]; then
+  cat >"$HOME/.config/local/sandbox.env" <<'ENV'
+# Environment for sandbox containers (never touched by install). Passed to Docker as --env-file:
+# one KEY=value per line, no quotes, never sourced by a shell.
+# Claude Code login for the sandbox, from `claude setup-token`:
+# CLAUDE_CODE_OAUTH_TOKEN=
+ENV
+  chmod 600 "$HOME/.config/local/sandbox.env"
+fi
 
 ds_log "installed $installed components from $DS_ROOT"

@@ -19,6 +19,7 @@ ds_managed() {
     "$HOME/.config/tmux" \
     "$HOME/.config/nvim" \
     "$HOME/.config/bin" \
+    "$HOME/.config/sandbox" \
     "$HOME/.config/k9s" \
     "$HOME/.local/share/nvim/site/pack/vendor/start"
 }

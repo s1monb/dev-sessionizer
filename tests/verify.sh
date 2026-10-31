@@ -8,12 +8,13 @@ FAILED=0
 
 usage() {
   cat <<'EOF'
-Usage: tests/verify.sh [lint|mac|linux|all]
+Usage: tests/verify.sh [lint|mac|linux|sandbox|all]
 
-  lint   bash -n, shellcheck, portability and network gates on every shipped script
-  mac    smoke test natively on macOS, entry scripts under /bin/bash (3.2)
-  linux  smoke test in a Debian container (unpack step without network)
-  all    lint, linux, mac (default)
+  lint     bash -n, shellcheck, portability and network gates on every shipped script
+  mac      smoke test natively on macOS, entry scripts under /bin/bash (3.2)
+  linux    smoke test in a Debian container (unpack step without network)
+  sandbox  agent sandbox scenarios against the host Docker (needs network; not in all)
+  all      lint, linux, mac (default)
 EOF
 }
 
@@ -23,7 +24,7 @@ fail() { printf 'FAIL %s: %s\n' "$1" "$2"; FAILED=1; }
 shipped_scripts() {
   local f
   for f in install.sh pack.sh unpack.sh lib.sh tests/*.sh \
-    env/.config/bash/dev-sessionizer.bash env/.bashrc.example; do
+    env/.config/bash/dev-sessionizer.bash env/.bashrc.example env/.config/sandbox/entrypoint.sh; do
     [[ -f $f ]] && printf '%s\n' "$f"
   done
   for f in env/.config/bin/*; do
@@ -131,6 +132,26 @@ target_mac() {
   fi
 }
 
+# Runs the Docker-backed scenario_agent_* scenarios on this machine (SANDBOX_NETWORK passes through).
+target_sandbox() {
+  if ! command -v docker >/dev/null 2>&1; then
+    fail sandbox "docker not found"
+    return
+  fi
+  local names=()
+  while IFS= read -r name; do names+=("$name"); done < <(grep -oE '^scenario_agent_[a-z_]+' tests/smoke.sh)
+  if ((${#names[@]} == 0)); then
+    fail sandbox "no scenario_agent_* scenarios in tests/smoke.sh"
+    return
+  fi
+  if DS_DOCKER_TESTS=1 bash tests/smoke.sh "${names[@]}" >"$DS_TMP/sandbox" 2>&1; then
+    pass sandbox
+  else
+    sed 's/^/  /' "$DS_TMP/sandbox"
+    fail sandbox "$(grep -m 1 '^not ok' "$DS_TMP/sandbox" || echo 'sandbox scenarios failed')"
+  fi
+}
+
 DS_TMP="$(mktemp -d)"
 trap 'rm -rf "$DS_TMP"' EXIT
 
@@ -138,6 +159,7 @@ case "${1:-all}" in
   lint) target_lint ;;
   mac) target_mac ;;
   linux) target_linux ;;
+  sandbox) target_sandbox ;;
   all) target_lint; target_linux; target_mac ;;
   -h | --help) usage; exit 0 ;;
   *) usage >&2; exit 2 ;;

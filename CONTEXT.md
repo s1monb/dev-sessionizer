@@ -35,3 +35,7 @@ _Avoid_: cache (too narrow — state includes non-cache artefacts)
 **Plugin**:
 A Neovim extension. Plugins are vendored as git submodules under `env/vendor/nvim/` and installed to the Neovim package directory by `./install.sh`.
 _Avoid_: package (conflicts with Neovim's own "pack" terminology)
+
+**Agent sandbox**:
+A throwaway container started by `sandbox` in which a coding agent runs without permission prompts and can write only to one project folder.
+_Avoid_: sandbox (alone), which in tests means the throwaway `$HOME` used by smoke scenarios

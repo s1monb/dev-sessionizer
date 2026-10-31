@@ -382,10 +382,206 @@ scenario_helpers() {
   assert_contains "esc-caps-swap explains why" "$(cat "$DS_RUN/err")" "requires GNOME (gsettings)"
   assert_fail "dev-gc without arguments fails" "$DS_BASH" "$bin/dev-gc"
   assert_contains "dev-gc prints its usage" "$(cat "$DS_RUN/out")" "Usage"
-  assert_eq "only the supported helpers are installed" "$(ls "$bin" | tr '\n' ' ')" "dev dev-gc esc-caps-swap "
+  assert_eq "only the supported helpers are installed" "$(ls "$bin" | tr '\n' ' ')" "dev dev-gc esc-caps-swap sandbox "
   assert_ok "the AI runner is not installed" test ! -e "$HOME/.config/ai"
   assert_eq "no trace of the removed helpers" \
     "$(grep -rlE 'kubectx-create|claude-session|config/ai|alias ifi' "$HOME/.config" "$HOME/.bashrc" 2>/dev/null || true)" ""
+}
+
+# --- agent sandbox ---------------------------------------------------------
+
+# Docker scenarios need the host engine and network; verify.sh sandbox sets DS_DOCKER_TESTS=1.
+needs_docker() {
+  if [[ ${DS_DOCKER_TESTS:-} != 1 ]]; then
+    printf 'ok # skip (DS_DOCKER_TESTS=1 to run)\n'
+    return 1
+  fi
+  # The throwaway HOME has no Docker config; keep the real context and CLI plugins.
+  export DOCKER_CONFIG="$DS_REAL_HOME/.docker"
+}
+
+sandbox_cmd() { "$DS_BASH" "$HOME/.config/bin/sandbox" "$@"; }
+
+# A git repo with one commit; prints its physical path.
+new_project() {
+  local dir
+  dir="$(mktemp -d "$HOME/proj.XXXXXX")"
+  git -C "$dir" init -q
+  git -C "$dir" -c user.name=t -c user.email=t@example.com commit -q --allow-empty -m init
+  (cd "$dir" && pwd -P)
+}
+
+drop_cache() {
+  local v
+  for v in $(docker volume ls -q --filter "label=dev-sessionizer.project=$1"); do
+    docker volume rm -f "$v" >/dev/null
+  done
+}
+
+scenario_sandbox_install() {
+  new_sandbox
+  install >/dev/null
+  local env="$HOME/.config/local/sandbox.env"
+  assert_ok "sandbox is installed" test -x "$HOME/.config/bin/sandbox"
+  assert_ok "image files are installed" test -f "$HOME/.config/sandbox/Dockerfile" -a -x "$HOME/.config/sandbox/entrypoint.sh"
+  assert_contains "sandbox.env is private" "$(ls -l "$env")" "-rw-------"
+  echo 'MINE=1' >>"$env"
+  install >/dev/null
+  assert_contains "install keeps sandbox.env" "$(cat "$env")" "MINE=1"
+}
+
+scenario_sandbox_refusals() {
+  new_sandbox
+  install >/dev/null
+  mkdir -p "$HOME/p"
+  local arg
+  for arg in "$HOME" / "$(dirname "$HOME")" "$HOME/missing" --bogus; do
+    assert_fail "sandbox refuses $arg" sandbox_cmd "$arg"
+    assert_contains "refusal of $arg is explained" "$(cat "$DS_RUN/err")" "sandbox:"
+  done
+  assert_fail "sandbox refuses an unknown agent" sandbox_cmd codex
+  assert_contains "unknown agent lists the agents" "$(cat "$DS_RUN/err")" "claude, opencode, shell"
+  assert_fail "sandbox refuses two folders" sandbox_cmd "$HOME/p" "$HOME/p"
+  assert_ok "sandbox --help succeeds" sandbox_cmd --help
+  assert_contains "help shows usage" "$(cat "$DS_RUN/out")" "Usage"
+  if [[ -e /usr/bin/docker || -e /bin/docker ]]; then
+    printf 'ok # skip docker not found (docker is in /usr/bin or /bin)\n'
+  else
+    assert_fail "sandbox without docker fails" env PATH=/usr/bin:/bin "$DS_BASH" "$HOME/.config/bin/sandbox" "$HOME/p"
+    assert_contains "missing docker is explained" "$(cat "$DS_RUN/err")" "docker not found"
+  fi
+}
+
+scenario_agent_isolation() {
+  needs_docker || return 0
+  new_sandbox
+  install >/dev/null
+  git config --global user.name "Sandbox Tester"
+  git config --global user.email "tester@example.com"
+  local proj out
+  proj="$(new_project)"
+  export SSH_AUTH_SOCK=/tmp/fake.sock
+  out="$(sandbox_cmd shell "$proj" -- -c '
+    echo "uid=$(id -u) gid=$(id -g) pwd=$PWD"
+    grep -E "CapEff|NoNewPrivs" /proc/self/status
+    command -v sudo || echo no-sudo
+    ls /var/run/docker.sock /run/docker.sock 2>/dev/null || echo no-docker-socket
+    echo "ssh=${SSH_AUTH_SOCK:-unset}"
+    touch /etc/x 2>/dev/null || echo etc-denied
+    touch "$(dirname "$PWD")/outside" 2>/dev/null || echo outside-denied
+    claude --version >/dev/null && echo claude-ok
+    echo hi >made && git add made && git commit -qm sbx && echo committed
+    git push -q https://github.com/s1monb/dev-sessionizer.git HEAD:refs/heads/sbx-test 2>/dev/null || echo push-denied
+  ' 2>&1)"
+  assert_contains "runs as the host user in the project" "$out" "uid=$(id -u) gid=$(id -g) pwd=$proj"
+  assert_contains "no capabilities" "$out" "CapEff:	0000000000000000"
+  assert_contains "no new privileges" "$out" "NoNewPrivs:	1"
+  assert_contains "no sudo" "$out" "no-sudo"
+  assert_contains "no docker socket" "$out" "no-docker-socket"
+  assert_contains "no ssh agent" "$out" "ssh=unset"
+  assert_contains "system folders are read-only" "$out" "etc-denied"
+  assert_contains "host outside the project is unreachable" "$out" "outside-denied"
+  assert_contains "claude is installed" "$out" "claude-ok"
+  assert_contains "commits work" "$out" "committed"
+  assert_contains "push is denied" "$out" "push-denied"
+  assert_ok "nothing appeared outside the project" test ! -e "$(dirname "$proj")/outside"
+  assert_contains "created files belong to the host user" "$(ls -ln "$proj/made")" " $(id -u) "
+  assert_eq "commit carries the host identity" "$(git -C "$proj" log -1 --format=%an)" "Sandbox Tester"
+  assert_eq "the container is gone" "$(docker ps -aq --filter ancestor=dev-sessionizer-sandbox)" ""
+  drop_cache "$proj"
+}
+
+scenario_agent_config() {
+  needs_docker || return 0
+  new_sandbox
+  install >/dev/null
+  local proj out before after
+  proj="$(new_project)"
+  mkdir -p ~/.claude/projects/p ~/.config/opencode/node_modules/x ~/.local/share/opencode
+  echo '{"marker":1}' >~/.claude/settings.json
+  echo MARKER-CLAUDE >~/.claude/CLAUDE.md
+  echo '{}' >~/.claude/projects/p/t.jsonl
+  echo '{}' >~/.claude/history.jsonl
+  echo '{}' >~/.claude/.credentials.json
+  echo '{"hasCompletedOnboarding":true}' >~/.claude.json
+  echo '{}' >~/.config/opencode/opencode.jsonc
+  echo '//' >~/.config/opencode/node_modules/x/index.js
+  echo '{}' >~/.local/share/opencode/auth.json
+  echo FROM_ENVFILE=yes >>~/.config/local/sandbox.env
+  before="$(checksum_tree ~/.claude; cksum <~/.claude.json; checksum_tree ~/.config/opencode; cksum <~/.local/share/opencode/auth.json)"
+  out="$(CLAUDE_CODE_OAUTH_TOKEN=tok UNRELATED_SECRET=nope sandbox_cmd shell "$proj" -- -c '
+    cat ~/.claude/CLAUDE.md
+    for f in ~/.claude.json ~/.config/opencode/opencode.jsonc ~/.local/share/opencode/auth.json; do
+      test -f "$f" && echo "present ${f#$HOME/}"
+    done
+    for f in ~/.claude/projects ~/.claude/history.jsonl ~/.claude/.credentials.json ~/.config/opencode/node_modules; do
+      test -e "$f" && echo "leaked ${f#$HOME/}"
+    done
+    echo "{}" >~/.claude/settings.json && echo copy-writable
+    echo x >>/host/claude/settings.json 2>/dev/null || echo host-readonly
+    echo "token=$CLAUDE_CODE_OAUTH_TOKEN envfile=$FROM_ENVFILE unrelated=${UNRELATED_SECRET:-unset}"
+  ' 2>&1)"
+  after="$(checksum_tree ~/.claude; cksum <~/.claude.json; checksum_tree ~/.config/opencode; cksum <~/.local/share/opencode/auth.json)"
+  assert_contains "global instructions are inherited" "$out" "MARKER-CLAUDE"
+  assert_contains "claude.json is inherited" "$out" "present .claude.json"
+  assert_contains "opencode config is inherited" "$out" "present .config/opencode/opencode.jsonc"
+  assert_contains "opencode login is inherited" "$out" "present .local/share/opencode/auth.json"
+  assert_not_contains "history and credentials stay out" "$out" "leaked"
+  assert_contains "the agent can change its copy" "$out" "copy-writable"
+  assert_contains "the host config is read-only" "$out" "host-readonly"
+  assert_contains "only listed variables cross over" "$out" "token=tok envfile=yes unrelated=unset"
+  assert_eq "host config is unchanged" "$after" "$before"
+  rm -rf ~/.claude ~/.claude.json ~/.config/opencode ~/.local/share/opencode
+  assert_ok "starts without any host config" sandbox_cmd shell "$proj" -- -c true
+  drop_cache "$proj"
+}
+
+scenario_agent_opencode() {
+  needs_docker || return 0
+  new_sandbox
+  install >/dev/null
+  local proj
+  proj="$(new_project)"
+  assert_ok "opencode runs in the sandbox" sandbox_cmd opencode "$proj" -- --version
+  assert_contains "opencode can skip permission prompts" \
+    "$(sandbox_cmd shell "$proj" -- -c 'opencode --help 2>&1')" "--auto"
+  drop_cache "$proj"
+}
+
+scenario_agent_cache() {
+  needs_docker || return 0
+  new_sandbox
+  install >/dev/null
+  local proj other broken
+  proj="$(new_project)"
+  other="$(new_project)"
+  broken="$(new_project)"
+  echo 'shfmt 3.10.0' >"$proj/.tool-versions"
+  echo 'shfmt 3.10.0' >"$other/.tool-versions"
+  echo 'shfmt 0.0.999' >"$broken/.tool-versions"
+  assert_contains "project tools are installed" "$(sandbox_cmd shell "$proj" -- -c 'shfmt --version' 2>&1)" "v3.10.0"
+  assert_contains "tools are reused without network" \
+    "$(sandbox_cmd --network none shell "$proj" -- -c 'shfmt --version' 2>&1)" "v3.10.0"
+  assert_fail "another project has its own cache" sandbox_cmd --network none shell "$other" -- -c 'shfmt --version'
+  assert_fail "--reset empties the cache" sandbox_cmd --reset --network none shell "$proj" -- -c 'shfmt --version'
+  assert_ok "a failing tool install still starts the session" sandbox_cmd shell "$broken" -- -c true
+  assert_contains "the failed install is reported" "$(cat "$DS_RUN/err")" "mise install failed"
+  drop_cache "$proj"
+  drop_cache "$other"
+  drop_cache "$broken"
+}
+
+scenario_agent_shell() {
+  needs_docker || return 0
+  new_sandbox
+  install >/dev/null
+  local proj status=0
+  proj="$(new_project)"
+  assert_eq "shell runs as agent in the project" \
+    "$(sandbox_cmd shell "$proj" -- -c 'echo "$HOME $PWD $(id -un)"')" "/home/agent $proj agent"
+  sandbox_cmd shell "$proj" -- -c 'exit 7' || status=$?
+  assert_eq "the exit status passes through" "$status" 7
+  drop_cache "$proj"
 }
 
 # --- runner ----------------------------------------------------------------
