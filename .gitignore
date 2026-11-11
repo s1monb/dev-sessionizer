@@ -1,4 +1,4 @@
 .local
-.claude
+.claude/settings.local.json
 dev-sessionizer.tar.gz
 /backup/

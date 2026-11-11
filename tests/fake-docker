@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Stand-in for docker in smoke scenarios: logs every call to $FAKE_DOCKER_LOG and answers from
+# FAKE_DOCKER_* variables. Linked into PATH as `docker` by use_fake_docker in tests/smoke.sh.
+set -euo pipefail
+
+printf '%s\n' "$*" >>"${FAKE_DOCKER_LOG:-/dev/null}"
+
+# Value for one inspect field, e.g. 'index .Config.Labels "dev-sessionizer.uid"' or '.Architecture'.
+field() {
+  case "$1" in
+    *dev-sessionizer.packed*) printf '%s' "${FAKE_DOCKER_PACKED:-}" ;;
+    *dev-sessionizer.uid*) printf '%s' "${FAKE_DOCKER_UID:-}" ;;
+    *dev-sessionizer.gid*) printf '%s' "${FAKE_DOCKER_GID:-}" ;;
+    *dev-sessionizer.files*) printf '%s' "${FAKE_DOCKER_FILES:-}" ;;
+    *dev-sessionizer.hash*) printf '%s' "${FAKE_DOCKER_HASH:-}" ;;
+    *.Architecture*) printf '%s' "${FAKE_DOCKER_ARCH:-amd64}" ;;
+  esac
+}
+
+# Renders an inspect format: every {{...}} replaced by its value, everything else kept as is,
+# so '{{a}}|{{b}}' with empty values prints '|' exactly like real docker.
+render() {
+  local rest="$1" out="" inner
+  while [[ $rest == *'{{'* ]]; do
+    out="$out${rest%%\{\{*}"
+    rest="${rest#*\{\{}"
+    inner="${rest%%\}\}*}"
+    rest="${rest#*\}\}}"
+    out="$out$(field "$inner")"
+  done
+  printf '%s\n' "$out$rest"
+}
+
+case "${1:-}" in
+  info) exit "${FAKE_DOCKER_INFO_RC:-0}" ;;
+  image)
+    case "${2:-}" in
+      inspect)
+        [[ -n ${FAKE_DOCKER_IMAGE:-} ]] || { echo "Error: No such image" >&2; exit 1; }
+        format=""
+        shift 2
+        while (($#)); do
+          case "$1" in
+            -f | --format) format="$2"; shift ;;
+          esac
+          shift
+        done
+        render "$format"
+        ;;
+      rm) exit 0 ;;
+    esac
+    ;;
+  build) exit "${FAKE_DOCKER_BUILD_RC:-0}" ;;
+  save)
+    if [[ ${2:-} == --help ]]; then
+      if [[ ${FAKE_DOCKER_NO_SAVE_PLATFORM:-} == 1 ]]; then
+        echo "Usage: docker save [OPTIONS] IMAGE [IMAGE...]"
+      else
+        printf 'Usage: docker save [OPTIONS] IMAGE [IMAGE...]\n      --platform string\n'
+      fi
+      exit 0
+    fi
+    rc="${FAKE_DOCKER_SAVE_RC:-0}"
+    shift
+    while (($#)); do
+      if [[ $1 == -o ]]; then
+        ((rc == 0)) && echo fake-image >"$2"
+        shift
+      fi
+      shift
+    done
+    exit "$rc"
+    ;;
+  load) exit "${FAKE_DOCKER_LOAD_RC:-0}" ;;
+  tag | volume) exit 0 ;;
+  run) printf 'RUN %s\n' "$*" ;;
+esac

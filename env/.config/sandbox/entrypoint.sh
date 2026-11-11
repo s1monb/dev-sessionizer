@@ -31,6 +31,24 @@ copy_file /host/claude.json "$HOME/.claude.json"
 copy_tree /host/opencode-config "$HOME/.config/opencode" --exclude=./node_modules
 copy_file /host/opencode-auth.json "$HOME/.local/share/opencode/auth.json"
 
+# The sandbox is the isolation Claude Code's bypass-permissions dialog asks for, so pre-accept it
+# in this session's copy of the settings (the host file is never touched).
+settings="$HOME/.claude/settings.json"
+mkdir -p "$HOME/.claude"
+[[ -f $settings ]] || echo '{}' >"$settings"
+if jq '.skipDangerousModePermissionPrompt = true' "$settings" >"$settings.tmp" 2>/dev/null; then
+  mv "$settings.tmp" "$settings"
+else
+  rm -f "$settings.tmp"
+  echo "sandbox: ~/.claude/settings.json is not valid JSON; Claude Code will ask to confirm bypass mode" >&2
+fi
+
+# Images packed for an airgapped machine: no model catalog or language server downloads, which
+# would only wait on the blocked network. Models come from the target's own OpenCode config.
+if [[ ${SANDBOX_OFFLINE:-0} == 1 ]]; then
+  export OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1
+fi
+
 # Tools the project pins for mise, installed into the per-project cache under /cache.
 if [[ -f mise.toml || -f .mise.toml || -f .tool-versions ]]; then
   export MISE_TRUSTED_CONFIG_PATHS="$PWD"

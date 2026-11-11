@@ -273,7 +273,8 @@ the host user's ids, and the agent's config is in place.
 - The agents are installed at their latest version when the image is built. Rebuilding updates them.
   Pinning agent versions is not needed.
 - The sandbox needs network access to build the image and install tools, so it does not work in an
-  airgapped environment and is not carried by pack.
+  airgapped environment and is not carried by pack. (Superseded by feature 004: pack can now carry a
+  packed image for an airgapped target.)
 - A cache per project costs disk space and a first-time download per project. A single shared cache
   would be faster for new projects, but an agent in one project could replace a tool binary that
   another project's sandbox later runs, so it is not used.

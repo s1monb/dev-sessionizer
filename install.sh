@@ -66,6 +66,8 @@ if [[ ! -e $HOME/.config/local/sandbox.env ]]; then
 # one KEY=value per line, no quotes, never sourced by a shell.
 # Claude Code login for the sandbox, from `claude setup-token`:
 # CLAUDE_CODE_OAUTH_TOKEN=
+# Agent started by `sandbox` when none is named: claude (default) or opencode.
+# SANDBOX_AGENT=opencode
 ENV
   chmod 600 "$HOME/.config/local/sandbox.env"
 fi

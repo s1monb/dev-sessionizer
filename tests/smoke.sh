@@ -15,16 +15,30 @@ trap 'rm -rf "$DS_RUN"' EXIT
 # Keep tools away from the real environment: XDG paths, a running tmux, the user's nvim app name,
 # and PATH entries under the real home (an installed ~/.config/bin would shadow the sandbox's).
 unset XDG_CONFIG_HOME XDG_DATA_HOME XDG_STATE_HOME XDG_CACHE_HOME NVIM_APPNAME TMUX TMUX_PANE
+
+# shellcheck source=../lib.sh
+source "$REPO/lib.sh"
+
+# Hard prerequisites installed under the real home (~/.local/bin, mise, ...) would vanish with
+# those PATH entries, so link their real binaries into a folder of their own. A mise shim is
+# resolved to its tool first: with HOME pointing at a sandbox it no longer finds its config.
+mkdir -p "$DS_RUN/tools"
+for __t in $DS_PREREQS; do
+  __p="$(command -v "$__t" 2>/dev/null || true)"
+  case "$__p" in "$DS_REAL_HOME"/*) ;; *) continue ;; esac
+  if command -v mise >/dev/null 2>&1 && __m="$(mise which "$__t" 2>/dev/null)" && [[ -x $__m ]]; then
+    __p="$__m"
+  fi
+  ln -s "$__p" "$DS_RUN/tools/$__t"
+done
+
 __path=""
 IFS=: read -r -a __entries <<<"$PATH"
 for __e in ${__entries[@]+"${__entries[@]}"}; do
   case "$__e" in "$DS_REAL_HOME" | "$DS_REAL_HOME"/*) ;; *) __path="${__path:+$__path:}$__e" ;; esac
 done
-export PATH="$__path"
-unset __path __entries __e
-
-# shellcheck source=../lib.sh
-source "$REPO/lib.sh"
+export PATH="$__path:$DS_RUN/tools"
+unset __path __entries __e __t __p __m
 
 new_sandbox() {
   HOME="$(mktemp -d "$DS_RUN/home.XXXXXX")"
@@ -405,6 +419,34 @@ needs_docker() {
 
 sandbox_cmd() { "$DS_BASH" "$HOME/.config/bin/sandbox" "$@"; }
 
+# Puts tests/fake-docker first on PATH as `docker`, with an empty call log and no FAKE_DOCKER_*
+# answers set. Scenarios run in subshells, so this never leaks into the next one.
+use_fake_docker() {
+  local v
+  mkdir -p "$DS_RUN/fakebin"
+  ln -sf "$REPO/tests/fake-docker" "$DS_RUN/fakebin/docker"
+  case ":$PATH:" in *":$DS_RUN/fakebin:"*) ;; *) PATH="$DS_RUN/fakebin:$PATH" ;; esac
+  export PATH FAKE_DOCKER_LOG="$DS_RUN/docker.log"
+  : >"$FAKE_DOCKER_LOG"
+  for v in $(compgen -e | grep '^FAKE_DOCKER_' | grep -v '^FAKE_DOCKER_LOG$'); do
+    unset "$v"
+  done
+}
+
+docker_calls() { cat "$FAKE_DOCKER_LOG"; }
+
+# PATH without the fake docker and without any folder that has a docker binary; prints nothing
+# and fails when docker lives in /usr/bin or /bin (it cannot be hidden then).
+path_without_docker() {
+  [[ ! -e /usr/bin/docker && ! -e /bin/docker ]] || return 1
+  local p="" e dirs
+  IFS=: read -r -a dirs <<<"$PATH"
+  for e in ${dirs[@]+"${dirs[@]}"}; do
+    [[ $e == "$DS_RUN/fakebin" || -x $e/docker ]] || p="${p:+$p:}$e"
+  done
+  printf '%s' "$p"
+}
+
 # A git repo with one commit; prints its physical path.
 new_project() {
   local dir
@@ -428,6 +470,7 @@ scenario_sandbox_install() {
   assert_ok "sandbox is installed" test -x "$HOME/.config/bin/sandbox"
   assert_ok "image files are installed" test -f "$HOME/.config/sandbox/Dockerfile" -a -x "$HOME/.config/sandbox/entrypoint.sh"
   assert_contains "sandbox.env is private" "$(ls -l "$env")" "-rw-------"
+  assert_contains "sandbox.env shows the default agent setting" "$(cat "$env")" "# SANDBOX_AGENT=opencode"
   echo 'MINE=1' >>"$env"
   install >/dev/null
   assert_contains "install keeps sandbox.env" "$(cat "$env")" "MINE=1"
@@ -453,6 +496,268 @@ scenario_sandbox_refusals() {
     assert_fail "sandbox without docker fails" env PATH=/usr/bin:/bin "$DS_BASH" "$HOME/.config/bin/sandbox" "$HOME/p"
     assert_contains "missing docker is explained" "$(cat "$DS_RUN/err")" "docker not found"
   fi
+}
+
+# --- 004: packed image and default agent (fake docker) ----------------------
+
+pack_cmd() { "$DS_BASH" "$REPO/pack.sh" "$@"; }
+
+# Sets KEY=VALUE in the MANIFEST of extracted archive folder $1, replacing any existing KEY line.
+manifest_set() {
+  { grep -v "^$2=" "$1/MANIFEST" || true; printf '%s=%s\n' "$2" "$3"; } >"$1/MANIFEST.new"
+  mv "$1/MANIFEST.new" "$1/MANIFEST"
+}
+
+# The architecture that is not this machine's.
+other_arch() { if [[ $(ds_docker_arch) == amd64 ]]; then echo arm64; else echo amd64; fi; }
+
+# Labels of an up-to-date local image for this user, as the fake docker reports them.
+fake_local_image() {
+  FAKE_DOCKER_IMAGE=1
+  FAKE_DOCKER_HASH="$(ds_sandbox_files_hash)-$(id -u)-$(id -g)"
+  export FAKE_DOCKER_IMAGE FAKE_DOCKER_HASH
+}
+
+# Labels of a packed image for uid $1 (this user's gid) built from image files with hash $2.
+fake_packed_image() {
+  FAKE_DOCKER_IMAGE=1 FAKE_DOCKER_PACKED=1 FAKE_DOCKER_UID="$1" FAKE_DOCKER_FILES="$2"
+  FAKE_DOCKER_GID="$(id -g)"
+  export FAKE_DOCKER_IMAGE FAKE_DOCKER_PACKED FAKE_DOCKER_UID FAKE_DOCKER_GID FAKE_DOCKER_FILES
+}
+
+scenario_sandbox_files_hash_matches() {
+  new_sandbox
+  install >/dev/null
+  use_fake_docker
+  mkdir -p "$HOME/p"
+  assert_ok "sandbox builds when there is no image" sandbox_cmd shell "$HOME/p"
+  local label
+  label="$(docker_calls | grep '^build ' | grep -oE 'dev-sessionizer\.hash=[^ ]+')"
+  assert_eq "lib.sh and sandbox hash the image files the same way" \
+    "${label#dev-sessionizer.hash=}" "$(ds_sandbox_files_hash)-$(id -u)-$(id -g)"
+}
+
+scenario_pack_image_args() {
+  new_sandbox
+  use_fake_docker
+  local out="$DS_RUN/bad.tar.gz" args nodocker
+  for args in "--uid 1500" "--gid 1500" "--uid 0 --gid 1500" "--uid abc --gid 1" \
+    "--uid 1 --gid 1 --arch mips" "--arch arm64" "--uid 1500 --gid 1500 extra.tar.gz"; do
+    # shellcheck disable=SC2086 # word splitting of the argument list is intended
+    assert_fail "pack refuses $args" pack_cmd $args "$out"
+    assert_contains "refusal of $args is explained" "$(cat "$DS_RUN/err")" "dev-sessionizer:"
+    assert_ok "no archive after $args" test ! -e "$out"
+  done
+  assert_eq "argument errors call no docker" "$(docker_calls)" ""
+
+  assert_fail "pack fails when the daemon is down" env FAKE_DOCKER_INFO_RC=1 "$DS_BASH" "$REPO/pack.sh" --uid 1500 --gid 1500 "$out"
+  assert_contains "daemon down is explained" "$(cat "$DS_RUN/err")" "Docker"
+  assert_fail "pack fails when the build fails" env FAKE_DOCKER_BUILD_RC=1 "$DS_BASH" "$REPO/pack.sh" --uid 1500 --gid 1500 "$out"
+  assert_ok "no archive after a failed build" test ! -e "$out"
+  assert_fail "pack fails when the save fails (e.g. full disk)" env FAKE_DOCKER_SAVE_RC=1 "$DS_BASH" "$REPO/pack.sh" --uid 1500 --gid 1500 "$out"
+  assert_ok "no archive after a failed save" test ! -e "$out"
+  if nodocker="$(path_without_docker)"; then
+    assert_fail "pack with ids fails without docker" env PATH="$nodocker" "$DS_BASH" "$REPO/pack.sh" --uid 1500 --gid 1500 "$out"
+    assert_contains "missing docker is explained" "$(cat "$DS_RUN/err")" "docker not found"
+  else
+    printf 'ok # skip docker not found (docker is in /usr/bin or /bin)\n'
+  fi
+
+  echo keep >"$out"
+  assert_fail "a failed pack over an existing file" env FAKE_DOCKER_BUILD_RC=1 "$DS_BASH" "$REPO/pack.sh" --uid 1500 --gid 1500 "$out"
+  assert_eq "the existing file is unchanged" "$(cat "$out")" "keep"
+  assert_eq "no temporary archive is left" "$(find "$DS_RUN" -maxdepth 1 -name 'bad.tar.gz.tmp*' | wc -l | tr -d ' ')" "0"
+
+  assert_ok "pack --help succeeds" pack_cmd --help
+  assert_contains "help names --uid" "$(cat "$DS_RUN/out")" "--uid"
+}
+
+scenario_pack_image() {
+  new_sandbox
+  use_fake_docker
+  local out="$DS_RUN/img.tar.gz" build manifest calls
+  assert_ok "pack with ids succeeds" pack_cmd --uid 1500 --gid 1501 --arch arm64 "$out"
+  assert_contains "archive holds the image" "$(tar -tzf "$out")" "dev-sessionizer/sandbox-image.tar"
+  manifest="$(tar -xzOf "$out" dev-sessionizer/MANIFEST)"
+  assert_contains "MANIFEST has the uid" "$manifest" "sandbox_uid=1500"
+  assert_contains "MANIFEST has the gid" "$manifest" "sandbox_gid=1501"
+  assert_contains "MANIFEST has the arch" "$manifest" "sandbox_arch=arm64"
+  build="$(docker_calls | grep '^build ')"
+  local flag
+  for flag in --pull --no-cache "--platform linux/arm64" "--build-arg UID=1500" "--build-arg GID=1501" \
+    "--build-arg OFFLINE=1" "--label dev-sessionizer.packed=1" "--label dev-sessionizer.uid=1500" \
+    "--label dev-sessionizer.gid=1501" "--label dev-sessionizer.files=$(ds_sandbox_files_hash)" \
+    "-t dev-sessionizer-sandbox:packed"; do
+    assert_contains "build uses $flag" "$build" "$flag"
+  done
+  calls="$(docker_calls)"
+  assert_contains "save names the platform" "$(printf '%s\n' "$calls" | grep '^save -')" "--platform linux/arm64"
+  assert_contains "the :packed tag is removed" "$calls" "image rm dev-sessionizer-sandbox:packed"
+
+  use_fake_docker
+  export FAKE_DOCKER_NO_SAVE_PLATFORM=1
+  assert_ok "pack works with an older docker save" pack_cmd --uid 1500 --gid 1501 "$out"
+  assert_not_contains "save without --platform when unsupported" "$(docker_calls | grep '^save -')" "--platform"
+  assert_contains "default arch is this machine's" "$(tar -xzOf "$out" dev-sessionizer/MANIFEST)" "sandbox_arch=$(ds_docker_arch)"
+
+  use_fake_docker
+  assert_ok "pack without ids succeeds" pack_cmd "$out"
+  assert_eq "pack without ids calls no docker" "$(docker_calls)" ""
+  assert_not_contains "archive without ids has no image" "$(tar -tzf "$out")" "sandbox-image.tar"
+  assert_not_contains "MANIFEST without ids has no sandbox keys" "$(tar -xzOf "$out" dev-sessionizer/MANIFEST)" "sandbox_"
+}
+
+scenario_unpack_image() {
+  new_sandbox
+  use_fake_docker
+  local archive="$DS_RUN/u.tar.gz" dir calls nodocker
+  pack_cmd --uid "$(id -u)" --gid "$(id -g)" "$archive" >/dev/null
+
+  dir="$(extract "$archive")"
+  use_fake_docker
+  assert_ok "unpack with an image succeeds" "$DS_BASH" "$dir/unpack.sh"
+  calls="$(docker_calls)"
+  assert_contains "the image is loaded" "$calls" "load -i $dir/sandbox-image.tar"
+  assert_contains "the image is tagged for sandbox" "$calls" "tag dev-sessionizer-sandbox:packed dev-sessionizer-sandbox:latest"
+  assert_contains "the load tag is dropped" "$calls" "image rm dev-sessionizer-sandbox:packed"
+  assert_contains "the load is reported" "$(cat "$DS_RUN/out")" "loaded sandbox image for uid $(id -u) gid $(id -g)"
+  assert_not_contains "no warning for matching ids" "$(cat "$DS_RUN/err")" "will refuse"
+
+  new_sandbox
+  dir="$(extract "$archive")"
+  manifest_set "$dir" sandbox_arch "$(other_arch)"
+  use_fake_docker
+  assert_ok "unpack succeeds with an image for another arch" "$DS_BASH" "$dir/unpack.sh"
+  assert_not_contains "an image for another arch is not loaded" "$(docker_calls)" "load"
+  assert_contains "the arch is named" "$(cat "$DS_RUN/err")" "$(other_arch)"
+  assert_ok "environment is installed anyway" test -f "$HOME/.config/nvim/init.lua"
+
+  new_sandbox
+  dir="$(extract "$archive")"
+  use_fake_docker
+  assert_ok "unpack succeeds with the daemon down" env FAKE_DOCKER_INFO_RC=1 "$DS_BASH" "$dir/unpack.sh"
+  assert_not_contains "nothing is loaded with the daemon down" "$(docker_calls)" "load"
+  assert_contains "the manual load is explained" "$(cat "$DS_RUN/err")" "docker load -i"
+
+  if nodocker="$(path_without_docker)"; then
+    new_sandbox
+    dir="$(extract "$archive")"
+    assert_ok "unpack succeeds without docker" env PATH="$nodocker" "$DS_BASH" "$dir/unpack.sh"
+    assert_contains "the manual load is explained without docker" "$(cat "$DS_RUN/err")" "docker load -i"
+  else
+    printf 'ok # skip docker not found (docker is in /usr/bin or /bin)\n'
+  fi
+
+  new_sandbox
+  dir="$(extract "$archive")"
+  use_fake_docker
+  assert_ok "unpack succeeds when the load fails" env FAKE_DOCKER_LOAD_RC=1 "$DS_BASH" "$dir/unpack.sh"
+  assert_contains "the failed load is reported" "$(cat "$DS_RUN/err")" "not loaded"
+
+  new_sandbox
+  dir="$(extract "$archive")"
+  manifest_set "$dir" sandbox_uid 99999
+  use_fake_docker
+  assert_ok "unpack succeeds with an image for another user" "$DS_BASH" "$dir/unpack.sh"
+  assert_contains "an image for another user is still loaded" "$(docker_calls)" "load -i"
+  assert_contains "other ids are warned about" "$(cat "$DS_RUN/err")" "will refuse"
+
+  new_sandbox
+  dir="$(extract "$archive")"
+  manifest_set "$dir" arch bogus
+  use_fake_docker
+  assert_ok "unpack succeeds with runtime state for another platform" "$DS_BASH" "$dir/unpack.sh"
+  assert_contains "the image is loaded even when runtime state is skipped" "$(docker_calls)" "load -i"
+}
+
+scenario_sandbox_packed_image() {
+  new_sandbox
+  install >/dev/null
+  use_fake_docker
+  mkdir -p "$HOME/p"
+  fake_packed_image "$(id -u)" "$(ds_sandbox_files_hash)"
+  assert_ok "a matching packed image starts" sandbox_cmd shell "$HOME/p"
+  assert_contains "the session runs" "$(docker_calls)" "run "
+  assert_not_contains "a packed image is never built" "$(docker_calls)" "build"
+  assert_eq "no notice for a current packed image" "$(cat "$DS_RUN/err")" ""
+
+  use_fake_docker
+  fake_packed_image "$(id -u)" old
+  assert_ok "an older packed image still starts" sandbox_cmd shell "$HOME/p"
+  assert_contains "older image files are noticed" "$(cat "$DS_RUN/err")" "image was packed from older sandbox files"
+  assert_not_contains "an older packed image is not rebuilt" "$(docker_calls)" "build"
+
+  use_fake_docker
+  fake_packed_image 99999 "$(ds_sandbox_files_hash)"
+  assert_fail "a packed image for other ids is refused" sandbox_cmd shell "$HOME/p"
+  assert_contains "both sets of ids are named" "$(cat "$DS_RUN/err")" \
+    "image was packed for uid 99999 gid $(id -g), you are uid $(id -u) gid $(id -g)"
+  assert_not_contains "nothing starts for other ids" "$(docker_calls)" "run "
+  assert_not_contains "no cache volume for other ids" "$(docker_calls)" "volume"
+
+  use_fake_docker
+  fake_packed_image "$(id -u)" "$(ds_sandbox_files_hash)"
+  assert_fail "--rebuild on a packed image is refused" sandbox_cmd --rebuild shell "$HOME/p"
+  assert_contains "--rebuild refusal is explained" "$(cat "$DS_RUN/err")" "packed on another machine"
+  assert_not_contains "--rebuild builds nothing" "$(docker_calls)" "build"
+
+  use_fake_docker
+  fake_local_image
+  assert_ok "a current local image starts" sandbox_cmd shell "$HOME/p"
+  assert_not_contains "a current local image is not rebuilt" "$(docker_calls)" "build"
+
+  use_fake_docker
+  export FAKE_DOCKER_IMAGE=1 FAKE_DOCKER_HASH=stale
+  assert_ok "a stale local image starts after a rebuild" sandbox_cmd shell "$HOME/p"
+  local build
+  build="$(docker_calls | grep '^build ' || true)"
+  assert_contains "a stale local image is rebuilt" "$build" "build "
+  for label in "dev-sessionizer.uid=$(id -u)" "dev-sessionizer.gid=$(id -g)" \
+    "dev-sessionizer.files=$(ds_sandbox_files_hash)" "dev-sessionizer.hash="; do
+    assert_contains "local builds carry $label" "$build" "$label"
+  done
+  assert_not_contains "local builds are not marked packed" "$build" "dev-sessionizer.packed"
+}
+
+scenario_sandbox_default_agent() {
+  new_sandbox
+  install >/dev/null
+  mkdir -p "$HOME/p"
+  local env="$HOME/.config/local/sandbox.env"
+  # Runs sandbox with the given args and prints the mode word passed to the image.
+  mode_of() {
+    use_fake_docker
+    fake_local_image
+    sandbox_cmd "$@" "$HOME/p" >"$DS_RUN/mode-out" 2>&1 || return 1
+    grep -oE 'dev-sessionizer-sandbox (claude|opencode|shell)' "$DS_RUN/mode-out" | cut -d' ' -f2
+  }
+
+  rm -f "$env"
+  assert_eq "no sandbox.env starts claude" "$(mode_of)" "claude"
+  echo 'OTHER=1' >"$env"
+  assert_eq "no setting starts claude" "$(mode_of)" "claude"
+  echo 'SANDBOX_AGENT=opencode' >"$env"
+  assert_eq "SANDBOX_AGENT=opencode starts opencode" "$(mode_of)" "opencode"
+  printf 'SANDBOX_AGENT=claude\nSANDBOX_AGENT=opencode\n' >"$env"
+  assert_eq "the last setting wins" "$(mode_of)" "opencode"
+  echo '# SANDBOX_AGENT=opencode' >"$env"
+  assert_eq "a commented setting is ignored" "$(mode_of)" "claude"
+  echo 'SANDBOX_AGENT=opencode' >"$env"
+  assert_eq "a named agent wins over the setting" "$(mode_of claude)" "claude"
+  assert_eq "shell wins over the setting" "$(mode_of shell)" "shell"
+
+  local bad
+  for bad in vim '"opencode"' 'opencode '; do
+    printf 'SANDBOX_AGENT=%s\n' "$bad" >"$env"
+    use_fake_docker
+    fake_local_image
+    assert_fail "SANDBOX_AGENT=$bad is refused" sandbox_cmd "$HOME/p"
+    assert_contains "the bad value is named" "$(cat "$DS_RUN/err")" "SANDBOX_AGENT=$bad in"
+    assert_contains "the supported agents are listed" "$(cat "$DS_RUN/err")" "is not supported (claude, opencode)"
+    assert_eq "a bad setting is caught before docker" "$(docker_calls)" ""
+  done
+  printf 'SANDBOX_AGENT=vim\n' >"$env"
+  assert_eq "a named agent ignores a bad setting" "$(mode_of claude)" "claude"
 }
 
 scenario_agent_isolation() {
@@ -534,8 +839,21 @@ scenario_agent_config() {
   assert_contains "the host config is read-only" "$out" "host-readonly"
   assert_contains "only listed variables cross over" "$out" "token=tok envfile=yes unrelated=unset"
   assert_eq "host config is unchanged" "$after" "$before"
+  # The key is the check for "no bypass-permissions dialog": Claude Code skips it exactly when set.
+  local skip='jq -r .skipDangerousModePermissionPrompt ~/.claude/settings.json'
+  echo '{"theme":"dark"}' >~/.claude/settings.json
+  before="$(cksum <~/.claude/settings.json)"
+  assert_eq "the dialog is pre-accepted and host settings are kept" \
+    "$(sandbox_cmd shell "$proj" -- -c "$skip; jq -r .theme ~/.claude/settings.json" 2>/dev/null)" "true"$'\n'"dark"
+  assert_eq "host settings are unchanged" "$(cksum <~/.claude/settings.json)" "$before"
+  echo '{' >~/.claude/settings.json
+  assert_ok "invalid host settings still start" sandbox_cmd shell "$proj" -- -c true
+  assert_contains "invalid host settings are warned about" "$(cat "$DS_RUN/err")" "not valid JSON"
+  assert_eq "invalid host settings are unchanged" "$(cat ~/.claude/settings.json)" "{"
   rm -rf ~/.claude ~/.claude.json ~/.config/opencode ~/.local/share/opencode
   assert_ok "starts without any host config" sandbox_cmd shell "$proj" -- -c true
+  assert_eq "the dialog is pre-accepted without host settings" \
+    "$(sandbox_cmd shell "$proj" -- -c "$skip" 2>/dev/null)" "true"
   drop_cache "$proj"
 }
 
@@ -585,6 +903,34 @@ scenario_agent_shell() {
   sandbox_cmd shell "$proj" -- -c 'exit 7' || status=$?
   assert_eq "the exit status passes through" "$status" 7
   drop_cache "$proj"
+}
+
+scenario_agent_packed() {
+  needs_docker || return 0
+  new_sandbox
+  local archive="$DS_RUN/packed.tar.gz" dir proj out start elapsed
+  assert_ok "pack builds an image for this user" "$DS_BASH" "$REPO/pack.sh" --uid "$(id -u)" --gid "$(id -g)" "$archive"
+  docker image rm dev-sessionizer-sandbox >/dev/null 2>&1 || true
+  dir="$(extract "$archive")"
+  assert_ok "unpack loads the image" "$DS_BASH" "$dir/unpack.sh"
+  assert_contains "the load is reported" "$(cat "$DS_RUN/out")" "loaded sandbox image"
+  proj="$(new_project)"
+  out="$(sandbox_cmd --network none shell "$proj" -- -c 'id -u; id -g; claude --version; opencode --version; env' 2>"$DS_RUN/packed-err")"
+  assert_not_contains "nothing is built" "$(cat "$DS_RUN/packed-err")" "building"
+  assert_contains "runs as the packed uid" "$out" "$(id -u)"$'\n'"$(id -g)"
+  assert_contains "claude is in the image" "$out" "Claude Code"
+  local var
+  for var in SANDBOX_OFFLINE=1 OPENCODE_DISABLE_AUTOUPDATE=1 OPENCODE_DISABLE_MODELS_FETCH=1 OPENCODE_DISABLE_LSP_DOWNLOAD=1; do
+    assert_contains "offline session sets $var" "$out" "$var"
+  done
+  start="$(now_ms)"
+  sandbox_cmd --network none shell "$proj" -- -c 'opencode models >/dev/null 2>&1; true' >/dev/null 2>&1
+  elapsed=$(($(now_ms) - start))
+  printf '# opencode models offline: %d ms\n' "$elapsed"
+  assert_ok "opencode loads providers offline in under 10 s" test "$elapsed" -lt 10000
+  drop_cache "$proj"
+  # Later scenarios must build a local image again.
+  docker image rm dev-sessionizer-sandbox >/dev/null 2>&1 || true
 }
 
 # --- runner ----------------------------------------------------------------

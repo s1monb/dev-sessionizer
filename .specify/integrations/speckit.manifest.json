@@ -1,6 +1,6 @@
 {
   "integration": "speckit",
-  "version": "1.2.6.dev0",
+  "version": "1.2.5",
   "installed_at": "2026-10-30T21:10:01.142137+00:00",
   "files": {
     ".specify/scripts/python/check_prerequisites.py": "367e0e7cf8d384167aa60d2a99ba8d40ef9ca1e49b8a35f3ec44c9c759416600",

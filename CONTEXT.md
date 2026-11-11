@@ -39,3 +39,7 @@ _Avoid_: package (conflicts with Neovim's own "pack" terminology)
 **Agent sandbox**:
 A throwaway container started by `sandbox` in which a coding agent runs without permission prompts and can write only to one project folder.
 _Avoid_: sandbox (alone), which in tests means the throwaway `$HOME` used by smoke scenarios
+
+**Packed image**:
+The agent sandbox image built by pack for a target user's ids and carried inside the pack archive; loaded by unpack and never rebuilt by `sandbox`.
+_Avoid_: exported image, offline image
