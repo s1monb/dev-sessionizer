@@ -130,6 +130,20 @@ That file is passed to Docker as `--env-file` (one `KEY=value` per line, no quot
 place for any other variable the sandbox needs. `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`
 from your shell are passed too, as are your git name and email.
 
+**Sharing sessions with the host.** By default the sandbox starts with no Claude Code history.
+To continue a conversation on either side (`claude --continue` on the host after
+`sandbox -- --continue`, or the other way round), add this line to `~/.config/local/sandbox.env`:
+
+```text
+SANDBOX_SHARE_HISTORY=1
+```
+
+This mounts this project's folder under `~/.claude/projects/` read-write, which holds its
+transcripts and Claude Code memory. Other projects' history and the rest of `~/.claude` stay out
+or read-only. The agent can then edit what a host session reads when you resume it, and its
+memory files are loaded into later host sessions in this project, so treat them like the
+project's code. Don't have the same session open on both sides at once.
+
 **Toolchains.** If the project has `mise.toml`, `.mise.toml` or `.tool-versions`, the tools are
 installed before the agent starts. Installed tools and package caches live in a Docker volume per
 project, so the next start is fast. The agent has no root and cannot `apt install`; tools come from

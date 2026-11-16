@@ -20,6 +20,7 @@ Options:
   -h, --help      show this help
 
 Default agent: SANDBOX_AGENT=claude|opencode in ~/.config/local/sandbox.env (else claude).
+Share this project's Claude Code sessions with the host: SANDBOX_SHARE_HISTORY=1 there.
 EOF
 }
 
@@ -57,17 +58,27 @@ while (($#)); do
   shift
 done
 
-# Default agent from sandbox.env, read the way docker --env-file reads it: no quotes, last wins.
-if [[ -z $mode && -f $env_file ]]; then
+# Settings from sandbox.env, read the way docker --env-file reads it: no quotes, last wins.
+agent="" share_history=""
+if [[ -f $env_file ]]; then
   while IFS= read -r line || [[ -n $line ]]; do
-    case "$line" in SANDBOX_AGENT=*) mode="${line#SANDBOX_AGENT=}" ;; esac
+    case "$line" in
+      SANDBOX_AGENT=*) agent="${line#SANDBOX_AGENT=}" ;;
+      SANDBOX_SHARE_HISTORY=*) share_history="${line#SANDBOX_SHARE_HISTORY=}" ;;
+    esac
   done <"$env_file"
-  case "$mode" in
-    "" | claude | opencode) ;;
-    *) die "SANDBOX_AGENT=$mode in ~/.config/local/sandbox.env is not supported (claude, opencode)" ;;
-  esac
 fi
-mode="${mode:-claude}"
+if [[ -z $mode ]]; then
+  case "$agent" in
+    "" | claude | opencode) ;;
+    *) die "SANDBOX_AGENT=$agent in ~/.config/local/sandbox.env is not supported (claude, opencode)" ;;
+  esac
+  mode="${agent:-claude}"
+fi
+case "$share_history" in
+  "" | 0 | 1) ;;
+  *) die "SANDBOX_SHARE_HISTORY=$share_history in ~/.config/local/sandbox.env is not supported (0, 1)" ;;
+esac
 
 project="$(cd "${dir:-.}" && pwd -P)"
 home="$(cd "$HOME" && pwd -P)"
@@ -123,6 +134,14 @@ run=(run --rm -i --init --cap-drop=ALL --security-opt=no-new-privileges --pids-l
 # Host agent config, read-only; the entrypoint copies it into the container's home.
 [[ -e $HOME/.claude ]] && run+=(-v "$HOME/.claude:/host/claude:ro")
 [[ -e $HOME/.claude.json ]] && run+=(-v "$HOME/.claude.json:/host/claude.json:ro")
+# Opt-in: this project's Claude Code history (transcripts and memory), read-write, so sessions
+# resume on either side. Claude Code names the folder after the project path, which is the same
+# inside. Mounted under /host: docker would create missing parents in ~/.claude owned by root.
+if [[ $share_history == 1 ]]; then
+  history="$HOME/.claude/projects/${project//[^A-Za-z0-9]/-}"
+  mkdir -p "$history"
+  run+=(-v "$history:/host/claude-project")
+fi
 [[ -e $HOME/.config/opencode ]] && run+=(-v "$HOME/.config/opencode:/host/opencode-config:ro")
 [[ -e $HOME/.local/share/opencode/auth.json ]] &&
   run+=(-v "$HOME/.local/share/opencode/auth.json:/host/opencode-auth.json:ro")

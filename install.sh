@@ -68,6 +68,8 @@ if [[ ! -e $HOME/.config/local/sandbox.env ]]; then
 # CLAUDE_CODE_OAUTH_TOKEN=
 # Agent started by `sandbox` when none is named: claude (default) or opencode.
 # SANDBOX_AGENT=opencode
+# Share this project's Claude Code sessions and memory with the host, to resume on either side:
+# SANDBOX_SHARE_HISTORY=1
 ENV
   chmod 600 "$HOME/.config/local/sandbox.env"
 fi

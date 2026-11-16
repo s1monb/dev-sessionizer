@@ -760,6 +760,44 @@ scenario_sandbox_default_agent() {
   assert_eq "a named agent ignores a bad setting" "$(mode_of claude)" "claude"
 }
 
+scenario_sandbox_share_history() {
+  new_sandbox
+  install >/dev/null
+  mkdir -p "$HOME/my.proj" "$HOME/.claude"
+  local env="$HOME/.config/local/sandbox.env" proj slug run
+  proj="$(cd "$HOME/my.proj" && pwd -P)"
+  slug="$(printf %s "$proj" | tr -c 'A-Za-z0-9' '-')"
+
+  use_fake_docker
+  fake_local_image
+  assert_ok "sandbox starts without the setting" sandbox_cmd shell "$proj"
+  assert_not_contains "history is not shared by default" "$(docker_calls)" "/host/claude-project"
+  assert_contains "install documents the setting" "$(cat "$env")" "# SANDBOX_SHARE_HISTORY=1"
+
+  echo 'SANDBOX_SHARE_HISTORY=1' >>"$env"
+  use_fake_docker
+  fake_local_image
+  assert_ok "sandbox starts with shared history" sandbox_cmd shell "$proj"
+  run="$(docker_calls | grep '^run ')"
+  assert_contains "only this project's history is mounted, read-write" "$run" \
+    "-v $HOME/.claude/projects/$slug:/host/claude-project"
+  assert_ok "the history folder is created on the host" test -d "$HOME/.claude/projects/$slug"
+  assert_contains "the rest of ~/.claude stays read-only" "$run" "$HOME/.claude:/host/claude:ro"
+
+  echo 'SANDBOX_SHARE_HISTORY=0' >>"$env"
+  use_fake_docker
+  fake_local_image
+  assert_ok "sandbox starts with the setting off" sandbox_cmd shell "$proj"
+  assert_not_contains "the last setting wins" "$(docker_calls)" "/host/claude-project"
+
+  echo 'SANDBOX_SHARE_HISTORY=yes' >>"$env"
+  use_fake_docker
+  fake_local_image
+  assert_fail "a bad value is refused" sandbox_cmd shell "$proj"
+  assert_contains "the bad value is named" "$(cat "$DS_RUN/err")" "SANDBOX_SHARE_HISTORY=yes in"
+  assert_eq "a bad value is caught before docker" "$(docker_calls)" ""
+}
+
 scenario_agent_isolation() {
   needs_docker || return 0
   new_sandbox
@@ -854,6 +892,33 @@ scenario_agent_config() {
   assert_ok "starts without any host config" sandbox_cmd shell "$proj" -- -c true
   assert_eq "the dialog is pre-accepted without host settings" \
     "$(sandbox_cmd shell "$proj" -- -c "$skip" 2>/dev/null)" "true"
+  drop_cache "$proj"
+}
+
+scenario_agent_share_history() {
+  needs_docker || return 0
+  new_sandbox
+  install >/dev/null
+  local proj slug out
+  proj="$(new_project)"
+  slug="$(printf %s "$proj" | tr -c 'A-Za-z0-9' '-')"
+  mkdir -p ~/.claude/projects/"$slug" ~/.claude/projects/other
+  echo '{"from":"host"}' >~/.claude/projects/"$slug"/host.jsonl
+  echo '{}' >~/.claude/projects/other/t.jsonl
+  echo 'SANDBOX_SHARE_HISTORY=1' >>~/.config/local/sandbox.env
+  out="$(sandbox_cmd shell "$proj" -- -c '
+    dir=~/.claude/projects/'"$slug"'
+    cat "$dir/host.jsonl"
+    echo "{\"from\":\"sandbox\"}" >"$dir/sandbox.jsonl" && echo wrote
+    ls ~/.claude/projects
+    echo x >>/host/claude/settings.json 2>/dev/null || echo host-config-readonly
+  ' 2>&1)"
+  assert_contains "host sessions are visible inside" "$out" '{"from":"host"}'
+  assert_contains "the agent can write its sessions" "$out" "wrote"
+  assert_eq "sandbox sessions land on the host" "$(cat ~/.claude/projects/"$slug"/sandbox.jsonl)" '{"from":"sandbox"}'
+  assert_not_contains "other projects stay out" "$out" "other"
+  assert_contains "the rest of the config stays read-only" "$out" "host-config-readonly"
+  assert_contains "the session file belongs to the host user" "$(ls -ln ~/.claude/projects/"$slug"/sandbox.jsonl)" " $(id -u) "
   drop_cache "$proj"
 }
 

@@ -90,6 +90,13 @@ not see transcripts from other projects:
 - From `~/.config/opencode`: `node_modules`. It can hold macOS-native modules, and OpenCode
   reinstalls plugins from `package.json`.
 
+**Shared history (opt-in, FR-012a)**: With `SANDBOX_SHARE_HISTORY=1`, the host's
+`~/.claude/projects/<slug>` for this project is mounted read-write at `/host/claude-project` and
+the entrypoint links it into `~/.claude/projects/<slug>`. The project is mounted at its host path,
+so Claude Code computes the same slug on both sides. It is mounted under `/host` and linked rather
+than mounted in place, because Docker creates a mount's missing parents as root, which would leave
+`~/.claude` unwritable for the copy step. `history.jsonl` stays excluded: it lists every project.
+
 **Rationale**: A writable `~/.claude` would let the agent add hooks or MCP servers that run on the
 host the next time Claude Code runs there unsandboxed. Copying gives a normal writable config
 inside without that risk.

@@ -28,6 +28,12 @@ copy_tree /host/claude "$HOME/.claude" \
   --exclude=./backups --exclude=./todos --exclude=./statsig --exclude=./debug --exclude=./ide \
   --exclude=./.credentials.json
 copy_file /host/claude.json "$HOME/.claude.json"
+# With SANDBOX_SHARE_HISTORY=1 this project's history folder is mounted read-write: link it where
+# Claude Code looks (the folder name is the project path with each non-alphanumeric as '-').
+if [[ -d /host/claude-project ]]; then
+  mkdir -p "$HOME/.claude/projects"
+  ln -sfn /host/claude-project "$HOME/.claude/projects/${PWD//[^A-Za-z0-9]/-}"
+fi
 copy_tree /host/opencode-config "$HOME/.config/opencode" --exclude=./node_modules
 copy_file /host/opencode-auth.json "$HOME/.local/share/opencode/auth.json"
 

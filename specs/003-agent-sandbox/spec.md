@@ -200,6 +200,10 @@ the host user's ids, and the agent's config is in place.
   and login (`~/.config/opencode` and OpenCode's login file) MUST be available to the agent when
   present, and MUST be read-only from the sandbox's side. The agent MAY change its working copy for
   the session.
+- **FR-012a**: When `SANDBOX_SHARE_HISTORY=1` is set in `sandbox.env`, the project's own Claude
+  Code history folder (`~/.claude/projects/<project path with non-alphanumerics as ->`) MUST be
+  mounted read-write so sessions resume on either side. No other project's history MUST be
+  visible. Off by default, and the only exception to FR-012's read-only rule.
 - **FR-013**: Missing host config MUST be skipped without error.
 - **FR-014**: Claude Code login tokens set in the developer's environment (`CLAUDE_CODE_OAUTH_TOKEN`,
   `ANTHROPIC_API_KEY`) MUST be passed to the sandbox, because on macOS the Claude Code login lives in
