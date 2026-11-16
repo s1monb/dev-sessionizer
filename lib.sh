@@ -6,6 +6,21 @@ DS_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ds_os() { uname -s; }
 ds_arch() { uname -m; }
 
+# Docker's name for this machine's architecture (amd64, arm64); fails for anything else.
+ds_docker_arch() {
+  case "$(uname -m)" in
+    x86_64 | amd64) echo amd64 ;;
+    aarch64 | arm64) echo arm64 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Checksum of the sandbox image files; must match what env/.config/bin/sandbox computes.
+ds_sandbox_files_hash() {
+  cat "$DS_ROOT/env/.config/sandbox/Dockerfile" "$DS_ROOT/env/.config/sandbox/entrypoint.sh" |
+    cksum | cut -d' ' -f1
+}
+
 ds_log() { printf 'dev-sessionizer: %s\n' "$*"; }
 ds_err() { printf 'dev-sessionizer: %s\n' "$*" >&2; }
 

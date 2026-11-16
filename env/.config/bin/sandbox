@@ -18,6 +18,9 @@ Options:
   --rebuild       rebuild the image from scratch (picks up new agent versions)
   --reset         empty this project's tool cache first
   -h, --help      show this help
+
+Default agent: SANDBOX_AGENT=claude|opencode in ~/.config/local/sandbox.env (else claude).
+Share this project's Claude Code sessions with the host: SANDBOX_SHARE_HISTORY=1 there.
 EOF
 }
 
@@ -54,7 +57,28 @@ while (($#)); do
   esac
   shift
 done
-mode="${mode:-claude}"
+
+# Settings from sandbox.env, read the way docker --env-file reads it: no quotes, last wins.
+agent="" share_history=""
+if [[ -f $env_file ]]; then
+  while IFS= read -r line || [[ -n $line ]]; do
+    case "$line" in
+      SANDBOX_AGENT=*) agent="${line#SANDBOX_AGENT=}" ;;
+      SANDBOX_SHARE_HISTORY=*) share_history="${line#SANDBOX_SHARE_HISTORY=}" ;;
+    esac
+  done <"$env_file"
+fi
+if [[ -z $mode ]]; then
+  case "$agent" in
+    "" | claude | opencode) ;;
+    *) die "SANDBOX_AGENT=$agent in ~/.config/local/sandbox.env is not supported (claude, opencode)" ;;
+  esac
+  mode="${agent:-claude}"
+fi
+case "$share_history" in
+  "" | 0 | 1) ;;
+  *) die "SANDBOX_SHARE_HISTORY=$share_history in ~/.config/local/sandbox.env is not supported (0, 1)" ;;
+esac
 
 project="$(cd "${dir:-.}" && pwd -P)"
 home="$(cd "$HOME" && pwd -P)"
@@ -66,12 +90,28 @@ fi
 command -v docker >/dev/null 2>&1 || die "docker not found; install Docker to use the sandbox"
 docker info >/dev/null 2>&1 || die "cannot reach the Docker daemon; is it running?"
 
-# The image is rebuilt whenever its files or the host user change.
 files="$(cd "$(dirname "${BASH_SOURCE[0]}")/../sandbox" && pwd -P)"
-hash="$(cat "$files/Dockerfile" "$files/entrypoint.sh" | cksum | cut -d' ' -f1)-$(id -u)-$(id -g)"
-current="$(docker image inspect -f '{{ index .Config.Labels "dev-sessionizer.hash" }}' "$image" 2>/dev/null || true)"
-if ((rebuild)) || [[ $current != "$hash" ]]; then
-  build=(build -t "$image" --label "dev-sessionizer.hash=$hash"
+files_hash="$(cat "$files/Dockerfile" "$files/entrypoint.sh" | cksum | cut -d' ' -f1)"
+hash="$files_hash-$(id -u)-$(id -g)"
+# '|' between fields: a local image has empty packed/uid/gid labels, which whitespace would drop.
+labels='{{index .Config.Labels "dev-sessionizer.packed"}}|{{index .Config.Labels "dev-sessionizer.uid"}}|{{index .Config.Labels "dev-sessionizer.gid"}}|{{index .Config.Labels "dev-sessionizer.files"}}|{{index .Config.Labels "dev-sessionizer.hash"}}'
+IFS='|' read -r packed img_uid img_gid img_files current <<<"$(docker image inspect -f "$labels" "$image" 2>/dev/null || true)"
+
+if [[ $packed == 1 ]]; then
+  # Packed on another machine by pack.sh: never rebuilt here (the target may have no network).
+  if [[ $img_uid != "$(id -u)" || $img_gid != "$(id -g)" ]]; then
+    die "image was packed for uid $img_uid gid $img_gid, you are uid $(id -u) gid $(id -g)"
+  fi
+  if ((rebuild)); then
+    die "image was packed on another machine; repack there, or 'docker image rm $image' to build locally"
+  fi
+  if [[ $img_files != "$files_hash" ]]; then
+    printf 'sandbox: image was packed from older sandbox files; repack to update\n' >&2
+  fi
+elif ((rebuild)) || [[ $current != "$hash" ]]; then
+  # Local image: rebuilt whenever its files or the host user change.
+  build=(build -t "$image" --label "dev-sessionizer.hash=$hash" --label "dev-sessionizer.files=$files_hash"
+    --label "dev-sessionizer.uid=$(id -u)" --label "dev-sessionizer.gid=$(id -g)"
     --build-arg "UID=$(id -u)" --build-arg "GID=$(id -g)")
   ((rebuild)) && build+=(--pull --no-cache)
   printf 'sandbox: building %s\n' "$image" >&2
@@ -94,6 +134,14 @@ run=(run --rm -i --init --cap-drop=ALL --security-opt=no-new-privileges --pids-l
 # Host agent config, read-only; the entrypoint copies it into the container's home.
 [[ -e $HOME/.claude ]] && run+=(-v "$HOME/.claude:/host/claude:ro")
 [[ -e $HOME/.claude.json ]] && run+=(-v "$HOME/.claude.json:/host/claude.json:ro")
+# Opt-in: this project's Claude Code history (transcripts and memory), read-write, so sessions
+# resume on either side. Claude Code names the folder after the project path, which is the same
+# inside. Mounted under /host: docker would create missing parents in ~/.claude owned by root.
+if [[ $share_history == 1 ]]; then
+  history="$HOME/.claude/projects/${project//[^A-Za-z0-9]/-}"
+  mkdir -p "$history"
+  run+=(-v "$history:/host/claude-project")
+fi
 [[ -e $HOME/.config/opencode ]] && run+=(-v "$HOME/.config/opencode:/host/opencode-config:ro")
 [[ -e $HOME/.local/share/opencode/auth.json ]] &&
   run+=(-v "$HOME/.local/share/opencode/auth.json:/host/opencode-auth.json:ro")

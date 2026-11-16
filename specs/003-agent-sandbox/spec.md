@@ -200,6 +200,10 @@ the host user's ids, and the agent's config is in place.
   and login (`~/.config/opencode` and OpenCode's login file) MUST be available to the agent when
   present, and MUST be read-only from the sandbox's side. The agent MAY change its working copy for
   the session.
+- **FR-012a**: When `SANDBOX_SHARE_HISTORY=1` is set in `sandbox.env`, the project's own Claude
+  Code history folder (`~/.claude/projects/<project path with non-alphanumerics as ->`) MUST be
+  mounted read-write so sessions resume on either side. No other project's history MUST be
+  visible. Off by default, and the only exception to FR-012's read-only rule.
 - **FR-013**: Missing host config MUST be skipped without error.
 - **FR-014**: Claude Code login tokens set in the developer's environment (`CLAUDE_CODE_OAUTH_TOKEN`,
   `ANTHROPIC_API_KEY`) MUST be passed to the sandbox, because on macOS the Claude Code login lives in
@@ -273,7 +277,8 @@ the host user's ids, and the agent's config is in place.
 - The agents are installed at their latest version when the image is built. Rebuilding updates them.
   Pinning agent versions is not needed.
 - The sandbox needs network access to build the image and install tools, so it does not work in an
-  airgapped environment and is not carried by pack.
+  airgapped environment and is not carried by pack. (Superseded by feature 004: pack can now carry a
+  packed image for an airgapped target.)
 - A cache per project costs disk space and a first-time download per project. A single shared cache
   would be faster for new projects, but an agent in one project could replace a tool binary that
   another project's sandbox later runs, so it is not used.

@@ -18,7 +18,8 @@ it, and a single archive carries it to airgapped machines.
 - `flux`, `talosctl`: their bash completions are generated at install time
 - `gsettings` on GNOME: needed by `esc-caps-swap`
 - the `bash-completion` package (on Arch: `pacman -S bash-completion`)
-- Docker: for `sandbox` (it also needs network to build its image) and for `tests/verify.sh`
+- Docker: for `sandbox` (it needs network to build its image, or a packed image), for
+  `./pack.sh --uid/--gid` and for `tests/verify.sh`
 
 ## Install and update
 
@@ -95,8 +96,24 @@ sandbox --reset              # empty this project's tool cache first
 sandbox --network host       # another docker network for this run
 ```
 
-The image is built on first use and rebuilt automatically when its files change. Each session gets
-a new container that is removed when the agent exits.
+The image is built on first use and rebuilt automatically when its files change (so the first start
+after an update that changes them rebuilds once). Each session gets a new container that is removed
+when the agent exits.
+
+**Default agent.** To start OpenCode when no agent is named, add this line to
+`~/.config/local/sandbox.env`:
+
+```text
+SANDBOX_AGENT=opencode
+```
+
+Naming an agent (`sandbox claude`, `sandbox shell`) still wins. The value is read like the rest of
+the file: no quotes, the last line wins, and anything other than `claude` or `opencode` is refused.
+
+**Bypass-permissions dialog.** Claude Code normally asks you to confirm bypass-permissions mode.
+Inside the sandbox the session's copy of `~/.claude/settings.json` gets
+`"skipDangerousModePermissionPrompt": true`, so it starts straight away; your own file is not
+changed, and Claude Code on the host still asks.
 
 **Logging in.** Your Claude Code and OpenCode config (`~/.claude`, `~/.claude.json`,
 `~/.config/opencode`, OpenCode's `auth.json`) is mounted read-only and copied into the container,
@@ -112,6 +129,20 @@ CLAUDE_CODE_OAUTH_TOKEN=...
 That file is passed to Docker as `--env-file` (one `KEY=value` per line, no quotes) and is the
 place for any other variable the sandbox needs. `CLAUDE_CODE_OAUTH_TOKEN` and `ANTHROPIC_API_KEY`
 from your shell are passed too, as are your git name and email.
+
+**Sharing sessions with the host.** By default the sandbox starts with no Claude Code history.
+To continue a conversation on either side (`claude --continue` on the host after
+`sandbox -- --continue`, or the other way round), add this line to `~/.config/local/sandbox.env`:
+
+```text
+SANDBOX_SHARE_HISTORY=1
+```
+
+This mounts this project's folder under `~/.claude/projects/` read-write, which holds its
+transcripts and Claude Code memory. Other projects' history and the rest of `~/.claude` stay out
+or read-only. The agent can then edit what a host session reads when you resume it, and its
+memory files are loaded into later host sessions in this project, so treat them like the
+project's code. Don't have the same session open on both sides at once.
 
 **Toolchains.** If the project has `mise.toml`, `.mise.toml` or `.tool-versions`, the tools are
 installed before the agent starts. Installed tools and package caches live in a Docker volume per
@@ -137,14 +168,16 @@ but not push. Nothing is exposed on host ports.
   that are symlinks to elsewhere (e.g. a dotfiles repo) arrive broken.
 
 On a Linux machine where containers on the default bridge network have no internet, set
-`export SANDBOX_NETWORK=host` in `~/.bashrc`. The sandbox needs network, so it does not work on an
-airgapped machine.
+`export SANDBOX_NETWORK=host` in `~/.bashrc`. On an airgapped machine, use a packed image (next
+section).
 
 ## Transporting to an airgapped machine
 
 ```bash
 # On the connected machine:
-./pack.sh                       # writes dev-sessionizer.tar.gz
+./pack.sh                               # writes dev-sessionizer.tar.gz
+./pack.sh --uid 1500 --gid 1500         # ... with the agent sandbox image for that user
+./pack.sh --uid 1500 --gid 1500 --arch amd64 /tmp/ds.tar.gz
 
 # Copy the archive over, then on the airgapped machine:
 tar -xzf dev-sessionizer.tar.gz && ./dev-sessionizer/unpack.sh
@@ -155,6 +188,35 @@ language servers, treesitter parsers, editor state). Unpack runs install, then r
 runtime state with the archive's. Runtime state is native code, so it is only restored when the
 archive was made on the same OS and CPU architecture; otherwise unpack says so and skips it. Your
 override files are never touched.
+
+**Packed sandbox image.** With `--uid` and `--gid` (run `id -u` and `id -g` on the target), pack
+also builds the agent sandbox image for that user and puts it in the archive. That needs Docker and
+network on the packing machine and adds the image (several hundred MB) to the archive. `--arch`
+picks the target's CPU (`amd64` or `arm64`, default this machine's). Building for another CPU works
+out of the box on Docker Desktop; on Linux it needs QEMU emulation (`binfmt`). Without `--uid` and
+`--gid`, pack is unchanged and needs no Docker.
+
+Unpack loads the image when Docker is running and the CPU matches. Otherwise it prints why and the
+`docker load` command to run later; unpack never fails because of the image. On the target,
+`sandbox` uses the packed image as it is:
+
+- it never rebuilds it, even when the image files in the repo are newer (it prints a notice then);
+- it refuses to run for a user whose ids differ from the ones it was packed for;
+- `sandbox --rebuild` is refused: repack on the connected machine instead. To build locally again
+  on a machine with network, remove it with `docker image rm dev-sessionizer-sandbox`.
+
+The agents in a packed image do not try to update themselves, and OpenCode does not download its
+model list or language servers. These still need network on the target:
+
+| What | Without it |
+|------|------------|
+| The model provider (set up in the target's own agent config) | The agent cannot answer |
+| OpenCode plugins listed in the config that are not installed yet | They are missing |
+| Formatters and MCP servers that download themselves on first use, and remote MCP servers | They fail |
+| OpenCode web fetch, web search and share links | They fail |
+| Project tools pinned for mise | Not installed; the session starts without them |
+| Packages the agent installs (npm, pip, Go modules, Cargo) | They fail, unless the target has a local mirror |
+| Language servers OpenCode would download | No code intelligence for those languages |
 
 ## Neovim keymaps
 

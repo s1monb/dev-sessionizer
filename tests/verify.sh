@@ -23,7 +23,7 @@ fail() { printf 'FAIL %s: %s\n' "$1" "$2"; FAILED=1; }
 
 shipped_scripts() {
   local f
-  for f in install.sh pack.sh unpack.sh lib.sh tests/*.sh \
+  for f in install.sh pack.sh unpack.sh lib.sh tests/*.sh tests/fake-docker \
     env/.config/bash/dev-sessionizer.bash env/.bashrc.example env/.config/sandbox/entrypoint.sh; do
     [[ -f $f ]] && printf '%s\n' "$f"
   done

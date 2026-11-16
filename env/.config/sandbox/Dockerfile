@@ -1,9 +1,11 @@
 # Image for `sandbox`: a coding agent that runs as the host user, with no root and no sudo.
-# Built locally by the sandbox command with --build-arg UID=$(id -u) --build-arg GID=$(id -g).
+# Built locally by the sandbox command with --build-arg UID=$(id -u) --build-arg GID=$(id -g), or by
+# pack.sh for another machine with --build-arg OFFLINE=1 as well.
 FROM debian:stable-slim
 
 ARG UID
 ARG GID
+ARG OFFLINE=0
 
 # Agents cannot install system packages (no root), so ship the tools they commonly reach for.
 RUN apt-get update \
@@ -25,6 +27,8 @@ RUN test -n "$UID" -a -n "$GID" || { echo "build with --build-arg UID=... --buil
 
 ENV LANG=C.UTF-8 \
     DISABLE_AUTOUPDATER=1 \
+    OPENCODE_DISABLE_AUTOUPDATE=1 \
+    SANDBOX_OFFLINE=$OFFLINE \
     GIT_TERMINAL_PROMPT=0 \
     MISE_DATA_DIR=/cache/mise \
     XDG_CACHE_HOME=/cache/xdg \

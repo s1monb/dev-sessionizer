@@ -46,7 +46,7 @@ require 'nx'.setup({
 require 'telescope'.load_extension('nx')
 
 
-vim.lsp.enable({ 'lua_ls', 'rust_analyzer', 'tinymist', 'marksman', 'ts_ls' })
+vim.lsp.enable({ 'lua_ls', 'rust_analyzer', 'tinymist', 'marksman', 'ts_ls', 'gopls' })
 
 vim.cmd('colorscheme gruvbox')
 vim.cmd(':hi statusline guibg=NONE')
